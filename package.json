@@ -2,11 +2,15 @@
   "name": "dsh-plugin-web-search-free",
   "version": "1.0.0",
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
-  "keywords": ["dsh-plugin", "web-search"],
+  "keywords": [
+    "dsh-plugin",
+    "web-search"
+  ],
   "dsh": {
     "name": "web-search-free",
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./cordis.patch.yml",
+      "client": "./dist/client.js"
     }
   },
   "koishi": {
@@ -17,11 +21,14 @@
   "scripts": {
     "build": "tsc"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.0.1-rc.3"
+  },
   "devDependencies": {
-    "typescript": "^5.0.0",
     "@types/node": "^18.0.0",
-    "cordis": "^3.0.0"
+    "@types/react": "^19.2.18",
+    "cordis": "^3.0.0",
+    "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "cordis": "^3.0.0"

@@ -69,8 +69,11 @@ export function apply(ctx: Context, config: Config) {
       
       for (const { provider, key } of activeProviders) {
         try {
-          const resultStr = await provider.search(request.query, key)
-          return { content: resultStr, sources: [], truncated: false }
+          const result = await provider.search(request.query, key, signal)
+          if (typeof result === 'string') {
+            return { content: result, sources: [], truncated: false }
+          }
+          return { content: result.content || '', sources: result.sources || [], truncated: false }
         } catch (err: any) {
           lastError = err
           if (logger && logger.warn) {
@@ -96,7 +99,7 @@ export function apply(ctx: Context, config: Config) {
 
       for (const { provider, key } of activeProviders) {
         try {
-          const resultStr = await provider.fetch(request.url, key)
+          const resultStr = await provider.fetch(request.url, key, signal)
           return { url: request.url, statusCode: 200, body: { kind: 'text', content: resultStr }, truncated: false }
         } catch (err: any) {
           lastError = err

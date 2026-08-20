@@ -1,8 +1,8 @@
-import { WebSearchProvider } from '../types';
+import { WebSearchProvider, SearchResult } from '../types';
 
 export const firecrawlProvider: WebSearchProvider = {
   name: 'firecrawl',
-  async search(query: string, apiKey: string): Promise<string> {
+  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult | string> {
     const res = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: {
@@ -13,16 +13,24 @@ export const firecrawlProvider: WebSearchProvider = {
         query: query,
         pageOptions: { fetchPageContent: true }
       }),
+      signal,
     });
     if (!res.ok) throw new Error(`Firecrawl search failed: ${res.status} ${res.statusText}`);
     const data = await res.json();
     if (data.success && data.data) {
-      return data.data.map((r: any) => `- ${r.title}: ${r.markdown || r.description} (${r.url})`).join('\n');
+      return {
+        content: '', // Let sources speak for themselves
+        sources: data.data.map((r: any) => ({
+          url: r.url,
+          title: r.title,
+          snippet: r.markdown || r.description
+        }))
+      };
     }
     return 'No results found.';
   },
   
-  async fetch(url: string, apiKey: string): Promise<string> {
+  async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<string> {
     const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: {
@@ -33,6 +41,7 @@ export const firecrawlProvider: WebSearchProvider = {
         url: url,
         formats: ['markdown']
       }),
+      signal,
     });
     if (!res.ok) throw new Error(`Firecrawl fetch failed: ${res.status} ${res.statusText}`);
     const data = await res.json();

@@ -1,8 +1,8 @@
-import { WebSearchProvider } from '../types';
+import { WebSearchProvider, SearchResult } from '../types';
 
 export const tavilyProvider: WebSearchProvider = {
   name: 'tavily',
-  async search(query: string, apiKey: string): Promise<string> {
+  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult> {
     const res = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -12,13 +12,22 @@ export const tavilyProvider: WebSearchProvider = {
         search_depth: 'basic',
         include_answer: true,
       }),
+      signal,
     });
     if (!res.ok) throw new Error(`Tavily search failed: ${res.status} ${res.statusText}`);
     const data = await res.json();
-    return `Answer: ${data.answer || ''}\n\nResults:\n${data.results?.map((r: any) => `- ${r.title}: ${r.content} (${r.url})`).join('\n')}`;
+    
+    return {
+      content: data.answer || '',
+      sources: data.results?.map((r: any) => ({
+        url: r.url,
+        title: r.title,
+        snippet: r.content
+      })) || []
+    };
   },
   
-  async fetch(url: string, apiKey: string): Promise<string> {
+  async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<string> {
     const res = await fetch('https://api.tavily.com/extract', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -26,6 +35,7 @@ export const tavilyProvider: WebSearchProvider = {
         api_key: apiKey,
         urls: [url],
       }),
+      signal,
     });
     if (!res.ok) throw new Error(`Tavily extract failed: ${res.status} ${res.statusText}`);
     const data = await res.json();
