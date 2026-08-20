@@ -1,10 +1,13 @@
 import { Context, Schema } from 'cordis'
+import { availableProviders } from './providers'
+import { WebSearchProvider } from './types'
 
 export const name = 'web-search-free'
 
 export interface Config {
   firecrawlApiKey?: string
   tavilyApiKey?: string
+  // If you add a new provider, you can add its config key here
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -24,14 +27,21 @@ declare module 'cordis' {
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger?.('web-search-free') || console
 
-  const getProviders = () => {
-    const providers: { name: string; key: string }[] = []
-    if (config.firecrawlApiKey) providers.push({ name: 'firecrawl', key: config.firecrawlApiKey })
-    if (config.tavilyApiKey) providers.push({ name: 'tavily', key: config.tavilyApiKey })
-    return providers
+  // 获取已配置了 API Key 的 Providers
+  const getActiveProviders = () => {
+    const activeProviders: { provider: WebSearchProvider; key: string }[] = []
+    
+    for (const [name, provider] of Object.entries(availableProviders)) {
+      // 约定：配置项名为 providerName + 'ApiKey'
+      const configKey = `${name}ApiKey` as keyof Config
+      const apiKey = config[configKey]
+      if (apiKey && typeof apiKey === 'string') {
+        activeProviders.push({ provider, key: apiKey })
+      }
+    }
+    return activeProviders
   }
 
-  // Register web search tool
   ctx.tools?.register({
     name: 'web_search',
     description: 'Search the web for a given query to find up-to-date information.',
@@ -39,48 +49,16 @@ export function apply(ctx: Context, config: Config) {
       query: { type: 'string', required: true, description: 'The search query' }
     },
     async execute({ query }: { query: string }) {
-      const providers = getProviders()
-      if (providers.length === 0) {
-        throw new Error('No web search providers configured. Please set firecrawlApiKey or tavilyApiKey.')
+      const activeProviders = getActiveProviders()
+      if (activeProviders.length === 0) {
+        throw new Error('No web search providers configured. Please set at least one API key in config.')
       }
 
       let lastError: Error | null = null
       
-      for (const provider of providers) {
+      for (const { provider, key } of activeProviders) {
         try {
-          if (provider.name === 'tavily') {
-            const res = await fetch('https://api.tavily.com/search', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                api_key: provider.key,
-                query: query,
-                search_depth: 'basic',
-                include_answer: true,
-              }),
-            })
-            if (!res.ok) throw new Error(`Tavily search failed: ${res.status} ${res.statusText}`)
-            const data = await res.json()
-            return `Answer: ${data.answer || ''}\n\nResults:\n${data.results?.map((r: any) => `- ${r.title}: ${r.content} (${r.url})`).join('\n')}`
-          } else if (provider.name === 'firecrawl') {
-            const res = await fetch('https://api.firecrawl.dev/v1/search', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${provider.key}`
-              },
-              body: JSON.stringify({
-                query: query,
-                pageOptions: { fetchPageContent: true }
-              }),
-            })
-            if (!res.ok) throw new Error(`Firecrawl search failed: ${res.status} ${res.statusText}`)
-            const data = await res.json()
-            if (data.success && data.data) {
-              return data.data.map((r: any) => `- ${r.title}: ${r.markdown || r.description} (${r.url})`).join('\n')
-            }
-            return 'No results found.'
-          }
+          return await provider.search(query, key)
         } catch (err: any) {
           lastError = err
           if (logger && logger.warn) {
@@ -95,7 +73,6 @@ export function apply(ctx: Context, config: Config) {
     }
   })
 
-  // Register web fetch tool
   ctx.tools?.register({
     name: 'web_fetch',
     description: 'Fetch the text or markdown content of a specific web page URL.',
@@ -103,49 +80,16 @@ export function apply(ctx: Context, config: Config) {
       url: { type: 'string', required: true, description: 'The URL of the web page to fetch' }
     },
     async execute({ url }: { url: string }) {
-      const providers = getProviders()
-      if (providers.length === 0) {
-        throw new Error('No web fetch providers configured. Please set firecrawlApiKey or tavilyApiKey.')
+      const activeProviders = getActiveProviders()
+      if (activeProviders.length === 0) {
+        throw new Error('No web fetch providers configured. Please set at least one API key in config.')
       }
 
       let lastError: Error | null = null
 
-      for (const provider of providers) {
+      for (const { provider, key } of activeProviders) {
         try {
-          if (provider.name === 'tavily') {
-            const res = await fetch('https://api.tavily.com/extract', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                api_key: provider.key,
-                urls: [url],
-              }),
-            })
-            if (!res.ok) throw new Error(`Tavily extract failed: ${res.status} ${res.statusText}`)
-            const data = await res.json()
-            if (data.results && data.results.length > 0) {
-              return data.results[0].raw_content || 'No content found.'
-            }
-            return 'No results found.'
-          } else if (provider.name === 'firecrawl') {
-            const res = await fetch('https://api.firecrawl.dev/v1/scrape', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${provider.key}`
-              },
-              body: JSON.stringify({
-                url: url,
-                formats: ['markdown']
-              }),
-            })
-            if (!res.ok) throw new Error(`Firecrawl fetch failed: ${res.status} ${res.statusText}`)
-            const data = await res.json()
-            if (data.success && data.data) {
-              return data.data.markdown || 'No markdown content available.'
-            }
-            return 'Failed to fetch content.'
-          }
+          return await provider.fetch(url, key)
         } catch (err: any) {
           lastError = err
           if (logger && logger.warn) {
