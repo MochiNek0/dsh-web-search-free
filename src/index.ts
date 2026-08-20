@@ -7,12 +7,17 @@ export const name = 'web-search-free'
 export interface Config {
   firecrawlApiKey?: string
   tavilyApiKey?: string
-  // If you add a new provider, you can add its config key here
+  jinaApiKey?: string
+  exaApiKey?: string
+  braveApiKey?: string
 }
 
 export const Config: Schema<Config> = Schema.object({
   firecrawlApiKey: Schema.string().description('API key for Firecrawl.').role('secret'),
   tavilyApiKey: Schema.string().description('API key for Tavily.').role('secret'),
+  jinaApiKey: Schema.string().description('API key for Jina AI.').role('secret'),
+  exaApiKey: Schema.string().description('API key for Exa (Metaphor).').role('secret'),
+  braveApiKey: Schema.string().description('API key for Brave Search.').role('secret'),
 })
 
 declare module 'cordis' {
