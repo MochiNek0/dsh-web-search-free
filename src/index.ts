@@ -5,6 +5,13 @@ import { WebSearchProvider as MyProvider } from './types'
 export const name = 'web-search-free'
 export const inject = ['web']
 
+/**
+ * Settings namespace this plugin owns. The browser card in `./client` is keyed
+ * on this string: the Plugins settings tab dispatches `settings.plugin.item`
+ * per namespace the Host serves, so the two halves must spell it identically.
+ */
+export const SETTINGS_NAMESPACE = 'web-search-free'
+
 export interface Config {
   jinaApiKey?: string
   exaApiKey?: string
@@ -15,11 +22,11 @@ export interface Config {
 }
 
 export const Config: Schema<Config> = Schema.object({
-  jinaApiKey: Schema.string().description('API key for Jina AI.').role('secret'),
-  exaApiKey: Schema.string().description('API key for Exa (Metaphor).').role('secret'),
-  tavilyApiKey: Schema.string().description('API key for Tavily.').role('secret'),
-  firecrawlApiKey: Schema.string().description('API key for Firecrawl.').role('secret'),
-  braveApiKey: Schema.string().description('API key for Brave Search.').role('secret'),
+  jinaApiKey: Schema.string().description('API key for Jina AI.'),
+  exaApiKey: Schema.string().description('API key for Exa (Metaphor).'),
+  tavilyApiKey: Schema.string().description('API key for Tavily.'),
+  firecrawlApiKey: Schema.string().description('API key for Firecrawl.'),
+  braveApiKey: Schema.string().description('API key for Brave Search.'),
   providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave']))
     .default(['jina', 'exa', 'tavily', 'firecrawl', 'brave'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。')
@@ -29,17 +36,32 @@ declare module 'cordis' {
   interface Context {
     web: any
     logger: any
+    settings: any
   }
 }
 
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger?.('web-search-free') || console
 
+  // Register the settings namespace so the user layer (written by the Plugins
+  // settings card) exists at all: a namespace the Host does not serve is never
+  // dispatched to a card. Each call projects the section fresh, so a key saved
+  // in the UI reaches the next search without a restart.
+  let resolved: () => Config = () => config
+  ctx.inject(['settings'], (sctx) => {
+    const scope = sctx.settings.register(SETTINGS_NAMESPACE, Config, { base: config })
+    resolved = () => scope.get()
+    sctx.effect(() => () => {
+      resolved = () => config
+    })
+  })
+
   const getActiveProviders = () => {
+    const current = resolved()
     const activeProviders: { provider: MyProvider; key: string }[] = []
     
     const orderedNames = Array.from(new Set([
-      ...(config.providerOrder || []),
+      ...(current.providerOrder || []),
       ...Object.keys(availableProviders)
     ]))
 
@@ -48,7 +70,7 @@ export function apply(ctx: Context, config: Config) {
       if (!provider) continue
 
       const configKey = `${name}ApiKey` as keyof Config
-      const apiKey = config[configKey]
+      const apiKey = current[configKey]
       if (apiKey && typeof apiKey === 'string') {
         activeProviders.push({ provider, key: apiKey })
       }

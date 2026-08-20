@@ -8,10 +8,30 @@
   ],
   "dsh": {
     "name": "web-search-free",
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ]
+    },
     "bundle": {
-      "patch": "./cordis.patch.yml",
-      "client": "./dist/client.js"
+      "patch": "./cordis.patch.yml"
     }
+  },
+  "exports": {
+    ".": {
+      "default": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./client": {
+      "default": "./dist/client.js",
+      "types": "./dist/client.d.ts"
+    },
+    "./package.json": "./package.json"
   },
   "koishi": {
     "description": "免费 Web Search 与内容抓取 (支持多引擎轮询 fallback)"
@@ -19,7 +39,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc && node wrap-client.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.0.1-rc.3"
