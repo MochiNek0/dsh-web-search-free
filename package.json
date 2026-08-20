@@ -1,0 +1,19 @@
+{
+  "name": "dsh-plugin-web-search-free",
+  "version": "1.0.0",
+  "description": "Free web search plugin for dsh supporting firecrawl and tavily",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^18.0.0",
+    "cordis": "^3.0.0"
+  },
+  "peerDependencies": {
+    "cordis": "^3.0.0"
+  }
+}
