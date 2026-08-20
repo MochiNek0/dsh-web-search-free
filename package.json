@@ -6,6 +6,9 @@
   "dsh": {
     "name": "web-search-free"
   },
+  "koishi": {
+    "description": "免费 Web Search 与内容抓取 (支持多引擎轮询 fallback)"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
