@@ -5,19 +5,23 @@ import { WebSearchProvider } from './types'
 export const name = 'web-search-free'
 
 export interface Config {
-  firecrawlApiKey?: string
-  tavilyApiKey?: string
   jinaApiKey?: string
   exaApiKey?: string
+  tavilyApiKey?: string
+  firecrawlApiKey?: string
   braveApiKey?: string
+  providerOrder: ('jina' | 'exa' | 'tavily' | 'firecrawl' | 'brave')[]
 }
 
 export const Config: Schema<Config> = Schema.object({
-  firecrawlApiKey: Schema.string().description('API key for Firecrawl.').role('secret'),
-  tavilyApiKey: Schema.string().description('API key for Tavily.').role('secret'),
   jinaApiKey: Schema.string().description('API key for Jina AI.').role('secret'),
   exaApiKey: Schema.string().description('API key for Exa (Metaphor).').role('secret'),
+  tavilyApiKey: Schema.string().description('API key for Tavily.').role('secret'),
+  firecrawlApiKey: Schema.string().description('API key for Firecrawl.').role('secret'),
   braveApiKey: Schema.string().description('API key for Brave Search.').role('secret'),
+  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave']))
+    .default(['jina', 'exa', 'tavily', 'firecrawl', 'brave'])
+    .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。')
 })
 
 declare module 'cordis' {
@@ -32,11 +36,20 @@ declare module 'cordis' {
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger?.('web-search-free') || console
 
-  // 获取已配置了 API Key 的 Providers
+  // 获取已配置了 API Key 的 Providers，并根据 providerOrder 排序
   const getActiveProviders = () => {
     const activeProviders: { provider: WebSearchProvider; key: string }[] = []
     
-    for (const [name, provider] of Object.entries(availableProviders)) {
+    // 按照用户配置的顺序排列，如果有些新增的 provider 没在数组里，拼在后面
+    const orderedNames = Array.from(new Set([
+      ...(config.providerOrder || []),
+      ...Object.keys(availableProviders)
+    ]))
+
+    for (const name of orderedNames) {
+      const provider = availableProviders[name]
+      if (!provider) continue
+
       // 约定：配置项名为 providerName + 'ApiKey'
       const configKey = `${name}ApiKey` as keyof Config
       const apiKey = config[configKey]
