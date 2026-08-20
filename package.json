@@ -4,7 +4,10 @@
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
   "keywords": ["dsh-plugin", "web-search"],
   "dsh": {
-    "name": "web-search-free"
+    "name": "web-search-free",
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
   "koishi": {
     "description": "免费 Web Search 与内容抓取 (支持多引擎轮询 fallback)"

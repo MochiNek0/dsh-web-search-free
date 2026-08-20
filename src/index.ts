@@ -1,8 +1,9 @@
 import { Context, Schema } from 'cordis'
 import { availableProviders } from './providers'
-import { WebSearchProvider } from './types'
+import { WebSearchProvider as MyProvider } from './types'
 
 export const name = 'web-search-free'
+export const inject = ['web']
 
 export interface Config {
   jinaApiKey?: string
@@ -26,9 +27,7 @@ export const Config: Schema<Config> = Schema.object({
 
 declare module 'cordis' {
   interface Context {
-    tools: {
-      register(tool: any): void
-    }
+    web: any
     logger: any
   }
 }
@@ -36,11 +35,9 @@ declare module 'cordis' {
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger?.('web-search-free') || console
 
-  // 获取已配置了 API Key 的 Providers，并根据 providerOrder 排序
   const getActiveProviders = () => {
-    const activeProviders: { provider: WebSearchProvider; key: string }[] = []
+    const activeProviders: { provider: MyProvider; key: string }[] = []
     
-    // 按照用户配置的顺序排列，如果有些新增的 provider 没在数组里，拼在后面
     const orderedNames = Array.from(new Set([
       ...(config.providerOrder || []),
       ...Object.keys(availableProviders)
@@ -50,7 +47,6 @@ export function apply(ctx: Context, config: Config) {
       const provider = availableProviders[name]
       if (!provider) continue
 
-      // 约定：配置项名为 providerName + 'ApiKey'
       const configKey = `${name}ApiKey` as keyof Config
       const apiKey = config[configKey]
       if (apiKey && typeof apiKey === 'string') {
@@ -60,13 +56,10 @@ export function apply(ctx: Context, config: Config) {
     return activeProviders
   }
 
-  ctx.tools?.register({
-    name: 'web_search',
-    description: 'Search the web for a given query to find up-to-date information.',
-    parameters: {
-      query: { type: 'string', required: true, description: 'The search query' }
-    },
-    async execute({ query }: { query: string }) {
+  ctx.web?.registerSearchProvider({
+    id: 'web-search-free',
+    available: () => getActiveProviders().length > 0,
+    async search(request: any, signal: any) {
       const activeProviders = getActiveProviders()
       if (activeProviders.length === 0) {
         throw new Error('No web search providers configured. Please set at least one API key in config.')
@@ -76,13 +69,12 @@ export function apply(ctx: Context, config: Config) {
       
       for (const { provider, key } of activeProviders) {
         try {
-          return await provider.search(query, key)
+          const resultStr = await provider.search(request.query, key)
+          return { content: resultStr, sources: [], truncated: false }
         } catch (err: any) {
           lastError = err
           if (logger && logger.warn) {
             logger.warn(`Provider ${provider.name} search failed: ${err.message}. Trying next provider if available...`)
-          } else {
-            console.warn(`Provider ${provider.name} search failed: ${err.message}. Trying next provider if available...`)
           }
           continue
         }
@@ -91,13 +83,10 @@ export function apply(ctx: Context, config: Config) {
     }
   })
 
-  ctx.tools?.register({
-    name: 'web_fetch',
-    description: 'Fetch the text or markdown content of a specific web page URL.',
-    parameters: {
-      url: { type: 'string', required: true, description: 'The URL of the web page to fetch' }
-    },
-    async execute({ url }: { url: string }) {
+  ctx.web?.registerFetchProvider({
+    id: 'web-search-free',
+    available: () => getActiveProviders().length > 0,
+    async fetch(request: any, signal: any) {
       const activeProviders = getActiveProviders()
       if (activeProviders.length === 0) {
         throw new Error('No web fetch providers configured. Please set at least one API key in config.')
@@ -107,13 +96,12 @@ export function apply(ctx: Context, config: Config) {
 
       for (const { provider, key } of activeProviders) {
         try {
-          return await provider.fetch(url, key)
+          const resultStr = await provider.fetch(request.url, key)
+          return { url: request.url, statusCode: 200, body: { kind: 'text', content: resultStr }, truncated: false }
         } catch (err: any) {
           lastError = err
           if (logger && logger.warn) {
             logger.warn(`Provider ${provider.name} fetch failed: ${err.message}. Trying next provider if available...`)
-          } else {
-            console.warn(`Provider ${provider.name} fetch failed: ${err.message}. Trying next provider if available...`)
           }
           continue
         }
