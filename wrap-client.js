@@ -12,7 +12,7 @@ if (code.includes('window.__ModuleLoader__.load')) {
 
 // Convert require to use the wrapper's require
 const wrappedCode = `window.__ModuleLoader__.load({
-  id: "dsh-plugin-web-search-free",
+  id: "dsh-web-search-free",
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;

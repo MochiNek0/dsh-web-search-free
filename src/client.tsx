@@ -176,7 +176,7 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
           disabled: disabled || !dirty,
           onClick: save,
           style: { ...btnPrimaryStyle, ...(disabled || !dirty ? { opacity: 0.4, cursor: 'default' } : {}) },
-        }, '保存'),
+        }, saving ? '保存中…' : '保存'),
       ),
     )
     return children
@@ -210,8 +210,17 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
         React.createElement('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } }, '免费多引擎 Web Search（拖动排序 · 按 providerOrder 顺序 fallback）'),
       ),
       React.createElement('span', {
-        style: { color: 'var(--dsw-alias-label-tertiary)', transition: 'transform .16s', transform: open ? 'rotate(180deg)' : 'none' },
-      }, '▾'),
+        style: { color: 'var(--dsw-alias-label-tertiary)', display: 'inline-flex', flex: 'none', transition: 'transform .16s', transform: open ? 'rotate(180deg)' : 'none' },
+      },
+        React.createElement('svg', {
+          width: 14, height: 14, viewBox: '0 0 14 14', fill: 'none', 'aria-hidden': true,
+        },
+          React.createElement('path', {
+            d: 'M3.5 5.5L7 9l3.5-3.5',
+            stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round',
+          }),
+        ),
+      ),
     ),
     open ? React.createElement('div', {
       style: { display: 'flex', flexDirection: 'column', gap: 16, margin: '0 16px 4px', borderTop: '1px solid var(--dsw-alias-border-l2)', paddingTop: 12 },

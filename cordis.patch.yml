@@ -1,4 +1,4 @@
-# dsh bundle patch for dsh-plugin-web-search-free.
+# dsh bundle patch for dsh-web-search-free.
 #
 # Applied as a profile layer in dsh.profile.bundles order; later layers
 # override earlier ones by entry id, so the `web` row repoint below wins
@@ -12,7 +12,7 @@
 # the per-backend fallback sequence inside the provider.
 - insert:
     - id: web-search-free
-      name: 'dsh-plugin-web-search-free'
+      name: 'dsh-web-search-free'
 
 # Repoint the web capability seam at this plugin's provider. dsh-base pins
 # `searchProvider: deepseek-official`; a non-insert patch with a matching id

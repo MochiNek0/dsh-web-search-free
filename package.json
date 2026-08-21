@@ -1,5 +1,5 @@
 {
-  "name": "dsh-plugin-web-search-free",
+  "name": "dsh-web-search-free",
   "version": "1.0.0",
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
   "keywords": [
