@@ -8,12 +8,12 @@ import * as React from 'react'
 const NAMESPACE = 'web-search-free'
 
 /** All backends the host half knows about; the order here is the default fallback. */
-const PROVIDERS: { key: string; field: string; label: string }[] = [
-  { key: 'jina', field: 'jinaApiKey', label: 'Jina AI' },
-  { key: 'exa', field: 'exaApiKey', label: 'Exa (Metaphor)' },
-  { key: 'tavily', field: 'tavilyApiKey', label: 'Tavily' },
-  { key: 'firecrawl', field: 'firecrawlApiKey', label: 'Firecrawl' },
-  { key: 'brave', field: 'braveApiKey', label: 'Brave Search' },
+const PROVIDERS: { key: string; field: string; label: string; signup: string }[] = [
+  { key: 'jina', field: 'jinaApiKey', label: 'Jina AI', signup: 'https://jina.ai/api-key' },
+  { key: 'exa', field: 'exaApiKey', label: 'Exa (Metaphor)', signup: 'https://dashboard.exa.ai/' },
+  { key: 'tavily', field: 'tavilyApiKey', label: 'Tavily', signup: 'https://app.tavily.com/' },
+  { key: 'firecrawl', field: 'firecrawlApiKey', label: 'Firecrawl', signup: 'https://www.firecrawl.dev/' },
+  { key: 'brave', field: 'braveApiKey', label: 'Brave Search', signup: 'https://api-dashboard.search.brave.com/register' },
 ]
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key)
 const byKey = (key: string) => PROVIDERS.find((p) => p.key === key)!
@@ -116,9 +116,9 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
           return React.createElement('div', {
             key,
             draggable: !disabled,
-            onDragStart: (e: any) => { setDragKey(key); e.dataTransfer.effectAllowed = 'move'; },
+            onDragStart: (e: any) => { setDragKey(key); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key) },
             onDragEnd: () => { setDragKey(null); setDropTarget(null) },
-            onDragOver: (e: any) => { e.preventDefault(); if (dragKey && dragKey !== key) setDropTarget(key) },
+            onDragOver: (e: any) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragKey && dragKey !== key) setDropTarget(key) },
             onDrop: (e: any) => {
               e.preventDefault()
               if (dragKey && dragKey !== key) reorder(indexOfKey(dragKey), index)
@@ -145,7 +145,16 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
               },
             }, hasKey ? `#${index + 1}` : '—'),
             React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 } },
-              React.createElement('span', { style: { color: hasKey ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)', fontWeight: 500 } }, provider.label),
+              React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
+                React.createElement('span', { style: { color: hasKey ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)', fontWeight: 500 } }, provider.label),
+                React.createElement('a', {
+                  href: provider.signup,
+                  target: '_blank',
+                  rel: 'noreferrer',
+                  onClick: (e: any) => e.stopPropagation(),
+                  style: { fontSize: 12, color: 'var(--dsw-alias-brand-primary)', textDecoration: 'none', flex: 'none' },
+                }, '获取 API Key ↗'),
+              ),
               React.createElement('input', {
                 type: 'password',
                 autoComplete: 'off',
