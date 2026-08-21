@@ -1,5 +1,7 @@
 # dsh-web-search-free
 
+中文 | [English](README.en.md)
+
 面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/dsh) 的免费 Web Search / 网页抓取插件。
 
 它把 dsh 默认的 `deepseek-official` 搜索/抓取通道，替换成一个**多引擎 + 自动 fallback** 的通道：你填入哪些引擎的 API Key，它就按你排定的顺序依次尝试，前一个失败（或额度耗尽）会自动落到下一个；同一引擎也可以填多个 Key（每行一个），引擎内 Key 同样按顺序轮换。所有请求都从你的浏览器侧发起，不经过官方搜索后端。
@@ -7,6 +9,26 @@
 - 注册为 dsh 的 `web` 能力通道（同时提供 `searchProvider` 与 `fetchProvider`，id 均为 `web-search-free`）。
 - 自带一个 Web 设置卡片（设置 → 插件 → **Web Search Free**），可拖动排序、逐个填 Key。
 - 作为 dsh bundle 层安装：装上即接管 web 搜索/抓取，卸载即自动回落到默认通道，无需手改 profile。
+
+## 为什么是 free 的：与官方通道的计费差异
+
+dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search-deepseek` 提供）**不是一个专用搜索端点**：每次搜索都会发起一次**完整的 Messages 模型调用**（`POST …/anthropic/v1/messages`，带原生 `web_search` 服务端工具），由 DeepSeek 在服务端执行搜索、返回结构化结果块。因此每次搜索都要烧两份 token：
+
+1. **辅助搜索请求本身**——一个独立模型收到 `Perform a web search for the query: <query>` + 工具定义，产生 input + output token（`maxTokens` 默认 4096、`maxUses` 默认 5）；这是一次完整的模型轮次，延迟与生成都按模型调用计。
+2. **结果回灌对话**——解析出的 sources（URL/标题/片段）注入回对话模型上下文，作为对话 token 一直重发直到压缩。
+
+两份都从 `DEEPSEEK_API_KEY` 余额扣除。
+
+本插件走各引擎的**专用检索端点**（如 Tavily `/search`、Exa `/search`、Jina `s.jina.ai`），是纯检索，不经任何 LLM：
+
+| | 官方 `deepseek-official` | 本插件 `web-search-free` |
+|---|---|---|
+| 检索方式 | 一次完整 LLM 模型调用 + 服务端搜索工具 | 直接调各引擎专用检索端点 |
+| 模型 token | 每次搜索都烧（input + output） | **0**（纯检索，不碰任何 LLM） |
+| 计费来源 | DeepSeek API 余额 | 各搜索 API 自身额度（多数有免费层） |
+| 凭据 | `DEEPSEEK_API_KEY` | 各引擎各自的 API Key |
+
+这正是插件名为 "free" 的核心理由——官方每次搜索烧一整轮模型 token，这里只走检索、不烧 token。
 
 ## 支持的引擎
 
