@@ -18,6 +18,13 @@ const PROVIDERS: { key: string; field: string; label: string; signup: string }[]
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key)
 const byKey = (key: string) => PROVIDERS.find((p) => p.key === key)!
 
+/** Split a multi-key field into trimmed, non-empty lines. */
+const parseKeys = (raw: string): string[] =>
+  (raw || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+
+/** Canonical storage form: one key per line, no blanks, trimmed. */
+const normalizeKeys = (raw: string): string => parseKeys(raw).join('\n')
+
 // `settingsScope.bind` reads `connection` and `remote` off the CALLING context,
 // so both must be declared here alongside the services this plugin uses itself.
 export const inject = ['slots', 'settingsScope', 'connection', 'remote']
@@ -62,7 +69,7 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
   }
   const order = orderDraft ?? storedOrder()
 
-  const keyDirty = PROVIDERS.filter((p) => p.field in keyDrafts && keyDrafts[p.field].trim() !== storedKey(p.field))
+  const keyDirty = PROVIDERS.filter((p) => p.field in keyDrafts && normalizeKeys(keyDrafts[p.field]) !== normalizeKeys(storedKey(p.field)))
   const orderDirty = orderDraft !== null && JSON.stringify(orderDraft) !== JSON.stringify(storedOrder())
   const dirty = keyDirty.length > 0 || orderDirty
   const disabled = saving || snapshot.writable === false
@@ -70,7 +77,7 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
   const save = async () => {
     setSaving(true)
     setFailed('')
-    const pending = keyDirty.map((p) => ({ field: p.field, value: keyDrafts[p.field].trim() }))
+    const pending = keyDirty.map((p) => ({ field: p.field, value: normalizeKeys(keyDrafts[p.field]) }))
     for (const { field, value } of pending) {
       if (value === '') await scope.unset(field)
       else await scope.set(field, value)
@@ -102,7 +109,7 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
     const children: React.ReactNode[] = []
     children.push(
       React.createElement('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } },
-        '拖动每一行调整调用顺序：排在前面的引擎优先调用，失败则 fallback 到下一个。未填 Key 的引擎不进入调用链。'),
+        '拖动每一行调整调用顺序：排在前面的引擎优先调用，失败则 fallback 到下一个。每个引擎可填多个 Key（每行一个），同一引擎内也会按顺序轮换。未填 Key 的引擎不进入调用链。'),
     )
     // One row per provider; the row's vertical position IS providerOrder, so the
     // key inputs double as the order controls — no separate list to render.
@@ -110,7 +117,8 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
       React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
         ...order.map((key, index) => {
           const provider = byKey(key)
-          const hasKey = storedKey(provider.field) !== ''
+          const keyCount = parseKeys(keyDrafts[provider.field] ?? storedKey(provider.field)).length
+          const hasKey = keyCount > 0
           const isDragging = dragKey === key
           const isDropTarget = dropTarget === key
           return React.createElement('div', {
@@ -155,15 +163,18 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
                   style: { fontSize: 12, color: 'var(--dsw-alias-brand-primary)', textDecoration: 'none', flex: 'none' },
                 }, '获取 API Key ↗'),
               ),
-              React.createElement('input', {
-                type: 'password',
+              React.createElement('textarea', {
+                rows: 2,
                 autoComplete: 'off',
+                spellCheck: false,
                 value: keyDrafts[provider.field] ?? storedKey(provider.field),
                 disabled,
-                placeholder: '未配置',
+                placeholder: '每行一个 API Key，支持多 Key 轮换',
                 onChange: (event: any) => setKeyDrafts({ ...keyDrafts, [provider.field]: event.target.value }),
-                style: { ...inputStyle, height: 30 },
+                style: { ...inputStyle, height: 'auto', minHeight: 30, resize: 'vertical', padding: '6px 12px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '20px' },
               }),
+              React.createElement('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } },
+                keyCount > 0 ? `${keyCount} 个 Key · 按顺序轮换` : '未配置'),
             ),
           )
         }),

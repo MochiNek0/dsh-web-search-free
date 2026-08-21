@@ -10,8 +10,7 @@ export const firecrawlProvider: WebSearchProvider = {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        query: query,
-        pageOptions: { fetchPageContent: true }
+        query: query
       }),
       signal,
     });

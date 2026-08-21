@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-free",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
   "keywords": [
     "dsh-plugin",
@@ -22,6 +22,10 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "files": [
+    "dist",
+    "cordis.patch.yml"
+  ],
   "exports": {
     ".": {
       "default": "./dist/index.js",
