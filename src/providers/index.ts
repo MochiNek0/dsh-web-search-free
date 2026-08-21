@@ -1,9 +1,9 @@
-import { WebSearchProvider } from '../types';
-import { tavilyProvider } from './tavily';
-import { firecrawlProvider } from './firecrawl';
-import { jinaProvider } from './jina';
-import { exaProvider } from './exa';
-import { braveProvider } from './brave';
+import { WebSearchProvider } from '../types.js';
+import { tavilyProvider } from './tavily.js';
+import { firecrawlProvider } from './firecrawl.js';
+import { jinaProvider } from './jina.js';
+import { exaProvider } from './exa.js';
+import { braveProvider } from './brave.js';
 
 // 注册所有可用的 Providers
 export const availableProviders: Record<string, WebSearchProvider> = {

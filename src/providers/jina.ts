@@ -1,4 +1,4 @@
-import { WebSearchProvider } from '../types';
+import { WebSearchProvider } from '../types.js';
 
 export const jinaProvider: WebSearchProvider = {
   name: 'jina',

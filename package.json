@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-free",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
   "keywords": [
     "dsh-plugin",
@@ -42,19 +42,22 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "scripts": {
-    "build": "tsc && node wrap-client.js"
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node wrap-client.cjs"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.0.1-rc.3"
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.0.1-rc.3",
+    "@deepseek-ai/schemastery": "^3.18.1"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/schemastery": "^3.18.1",
     "@types/node": "^18.0.0",
     "@types/react": "^19.2.18",
-    "cordis": "^3.0.0",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
-    "cordis": "^3.0.0"
+    "@deepseek-ai/cordis": "^4.0.1"
   }
 }

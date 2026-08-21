@@ -1,6 +1,7 @@
-import { Context, Schema } from 'cordis'
-import { availableProviders } from './providers'
-import { WebSearchProvider as MyProvider } from './types'
+import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
+import { availableProviders } from './providers/index.js'
+import { WebSearchProvider as MyProvider } from './types.js'
 
 export const name = 'web-search-free'
 export const inject = ['web']
@@ -21,7 +22,7 @@ export interface Config {
   providerOrder: ('jina' | 'exa' | 'tavily' | 'firecrawl' | 'brave')[]
 }
 
-export const Config: Schema<Config> = Schema.object({
+export const Config = Schema.object({
   jinaApiKey: Schema.string().description('API key(s) for Jina AI. One key per line for multi-key rotation.'),
   exaApiKey: Schema.string().description('API key(s) for Exa (Metaphor). One key per line for multi-key rotation.'),
   tavilyApiKey: Schema.string().description('API key(s) for Tavily. One key per line for multi-key rotation.'),
@@ -39,10 +40,9 @@ function maskKey(key: string): string {
   return `${key.slice(0, 4)}…${key.slice(-3)}`
 }
 
-declare module 'cordis' {
+declare module '@deepseek-ai/cordis' {
   interface Context {
     web: any
-    logger: any
     settings: any
   }
 }

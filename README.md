@@ -129,7 +129,7 @@ dsh plugin --profile web remove dsh-web-search-free
 
 宿主半边（`src/index.ts`，`inject: ['web']`）向 `ctx.web` 注册搜索与抓取 provider，内部按 `providerOrder` 顺序遍历「已配 Key」的引擎做 fallback；每个引擎的 Key 字段可填多个（每行一个），引擎内也会按行顺序逐个轮换。客户端半边（`src/client.tsx`）在「插件」设置页注册一张 React 卡片，读写同一命名空间 `web-search-free` 的设置。两层靠这个命名空间字符串对齐。
 
-构建时 `tsc` 产出 `dist/`，随后 `wrap-client.js` 把 `dist/client.js` 包成 `window.__ModuleLoader__.load(...)`，使其能被 dsh 的浏览器侧模块加载器加载。
+构建分两步（包声明 `"type": "module"`）：`tsconfig.json`（`module: NodeNext`）把宿主半边编成 ESM 产物（`dist/index.js` 等，与 dsh 运行时同为 ESM，避免 CJS `require()` 一个 ESM 依赖时触发的加载竞态）；`tsconfig.client.json`（`module: CommonJS`）单独编出 `dist/client.js`，再由 `wrap-client.cjs` 包成 `window.__ModuleLoader__.load(...)`，使其能被 dsh 的浏览器侧模块加载器加载。宿主半边从 `@deepseek-ai/schemastery` 取 `Schema`（而非旧版 `cordis`），`Context` 仅作类型从 `@deepseek-ai/cordis` 引入。
 
 ## 许可证
 

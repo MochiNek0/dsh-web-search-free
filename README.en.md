@@ -129,7 +129,7 @@ This plugin is a dsh **bundle layer** (`package.json` declares `dsh.bundle.patch
 
 The host half (`src/index.ts`, `inject: ['web']`) registers search and fetch providers into `ctx.web`, iterating configured-key engines in `providerOrder` order with fallback; each engine's key field may hold multiple values (one per line), rotated in order within the engine. The client half (`src/client.tsx`) registers a React card on the Plugins settings page, reading and writing the same `web-search-free` settings namespace. The two halves are aligned by that namespace string.
 
-The build runs `tsc` to produce `dist/`, then `wrap-client.js` wraps `dist/client.js` as `window.__ModuleLoader__.load(...)` so it can be loaded by dsh's browser-side module loader.
+The build has two steps (the package declares `"type": "module"`): `tsconfig.json` (`module: NodeNext`) compiles the host half to ESM (`dist/index.js` etc., matching dsh's ESM runtime and avoiding the load race triggered when CJS `require()`s an ESM dependency); `tsconfig.client.json` (`module: CommonJS`) compiles `dist/client.js` separately, which `wrap-client.cjs` then wraps as `window.__ModuleLoader__.load(...)` so it can be loaded by dsh's browser-side module loader. The host half imports `Schema` from `@deepseek-ai/schemastery` (not the legacy `cordis`), and `Context` is imported as a type only from `@deepseek-ai/cordis`.
 
 ## License
 

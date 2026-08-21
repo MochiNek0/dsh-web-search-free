@@ -1,4 +1,4 @@
-import { WebSearchProvider, SearchResult } from '../types';
+import { WebSearchProvider, SearchResult } from '../types.js';
 
 export const braveProvider: WebSearchProvider = {
   name: 'brave',
