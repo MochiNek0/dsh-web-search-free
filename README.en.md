@@ -2,7 +2,7 @@
 
 English | [中文](README.md)
 
-A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/dsh).
+A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness).
 
 It replaces dsh's default `deepseek-official` search/fetch channel with a **multi-engine + automatic fallback** channel: you provide API keys for whichever engines you choose, and it tries them in the order you arrange; if one fails (or runs out of quota) it automatically falls through to the next. A single engine may also carry multiple keys (one per line), rotated in order within that engine. All retrieval requests are issued by dsh's **host process (Node)** straight to each engine — never through the official search backend, and never through an LLM. The browser side holds only the settings card and issues no network requests.
 
@@ -22,27 +22,27 @@ Both are charged against your `DEEPSEEK_API_KEY` balance.
 
 This plugin instead calls each engine's **dedicated retrieval endpoint** (e.g. Tavily `/search`, Exa `/search`, Jina `s.jina.ai`) — pure retrieval, never touching any LLM:
 
-| | Official `deepseek-official` | This plugin `web-search-free` |
-|---|---|---|
-| Retrieval method | One full LLM model call + server-side search tool | Direct calls to each engine's dedicated retrieval endpoint |
-| Model tokens | Burned every search (input + output) | **0** (pure retrieval, no LLM involved) |
-| Billed against | DeepSeek API balance | Each search API's own quota (most have a free tier) |
-| Credentials | **Requires** `DEEPSEEK_API_KEY` | Per-engine API keys |
-| Result content | Sources only; snippets come from the model's citations, so an uncited result carries **no snippet** | Sources + snippets; Tavily also returns a direct answer |
+|                  | Official `deepseek-official`                                                                        | This plugin `web-search-free`                              |
+| ---------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Retrieval method | One full LLM model call + server-side search tool                                                   | Direct calls to each engine's dedicated retrieval endpoint |
+| Model tokens     | Burned every search (input + output)                                                                | **0** (pure retrieval, no LLM involved)                    |
+| Billed against   | DeepSeek API balance                                                                                | Each search API's own quota (most have a free tier)        |
+| Credentials      | **Requires** `DEEPSEEK_API_KEY`                                                                     | Per-engine API keys                                        |
+| Result content   | Sources only; snippets come from the model's citations, so an uncited result carries **no snippet** | Sources + snippets; Tavily also returns a direct answer    |
 
 That's the core reason the plugin is named "free" — the official channel burns a whole model turn per search, while this one does pure retrieval and burns zero tokens.
 
-> One more trap worth knowing: the official channel **hard-requires `DEEPSEEK_API_KEY`**. If your conversation model runs through a third-party route (a self-hosted provider, a relay, …) you likely never configured that key — and the official provider's `available()` only checks whether *a key resolver exists* (one always does), so dsh selects it as usual and **only throws `WEB_PROVIDER_CREDENTIAL_MISSING` once the model actually calls `web_search`**. Nothing in the UI hints at it. This plugin needs no LLM credential at all.
+> One more trap worth knowing: the official channel **hard-requires `DEEPSEEK_API_KEY`**. If your conversation model runs through a third-party route (a self-hosted provider, a relay, …) you likely never configured that key — and the official provider's `available()` only checks whether _a key resolver exists_ (one always does), so dsh selects it as usual and **only throws `WEB_PROVIDER_CREDENTIAL_MISSING` once the model actually calls `web_search`**. Nothing in the UI hints at it. This plugin needs no LLM credential at all.
 
 ## Supported engines
 
-| Engine | Search | Fetch | Result dates | Get an API key |
-|---|:---:|:---:|:---:|---|
-| Jina AI | ✓ | ✓ | some | <https://jina.ai/api-key> |
-| Exa (Metaphor) | ✓ | ✓ | some | <https://dashboard.exa.ai/> |
-| Tavily | ✓ | ✓ | ✗ | <https://app.tavily.com/> |
-| Firecrawl | ✓ | ✓ | ✗ | <https://www.firecrawl.dev/> |
-| Brave Search | ✓ | ✗ | **most** | <https://api-dashboard.search.brave.com/register> |
+| Engine         | Search | Fetch | Result dates | Get an API key                                    |
+| -------------- | :----: | :---: | :----------: | ------------------------------------------------- |
+| Jina AI        |   ✓    |   ✓   |     some     | <https://jina.ai/api-key>                         |
+| Exa (Metaphor) |   ✓    |   ✓   |     some     | <https://dashboard.exa.ai/>                       |
+| Tavily         |   ✓    |   ✓   |      ✗       | <https://app.tavily.com/>                         |
+| Firecrawl      |   ✓    |   ✓   |      ✗       | <https://www.firecrawl.dev/>                      |
+| Brave Search   |   ✓    |   ✗   |   **most**   | <https://api-dashboard.search.brave.com/register> |
 
 **On fetch**: the Brave Search API has no URL-fetch endpoint, so it **never enters the fetch chain** (search only). If Brave is the only engine with a key, the fetch chain is empty and fails with `No web fetch providers configured.` — configure a key for an engine that supports fetch as well.
 

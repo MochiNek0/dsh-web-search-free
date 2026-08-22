@@ -2,7 +2,7 @@
 
 中文 | [English](README.en.md)
 
-面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/dsh) 的免费 Web Search / 网页抓取插件。
+面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的免费 Web Search / 网页抓取插件。
 
 它把 dsh 默认的 `deepseek-official` 搜索/抓取通道，替换成一个**多引擎 + 自动 fallback** 的通道：你填入哪些引擎的 API Key，它就按你排定的顺序依次尝试，前一个失败（或额度耗尽）会自动落到下一个；同一引擎也可以填多个 Key（每行一个），引擎内 Key 同样按顺序轮换。所有检索请求都由 dsh 的**宿主进程（Node）**直接发往各引擎，不经过官方搜索后端、也不经过任何 LLM；浏览器侧只有那张设置卡片，不发任何网络请求。
 
@@ -22,13 +22,13 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 
 本插件走各引擎的**专用检索端点**（如 Tavily `/search`、Exa `/search`、Jina `s.jina.ai`），是纯检索，不经任何 LLM：
 
-| | 官方 `deepseek-official` | 本插件 `web-search-free` |
-|---|---|---|
-| 检索方式 | 一次完整 LLM 模型调用 + 服务端搜索工具 | 直接调各引擎专用检索端点 |
-| 模型 token | 每次搜索都烧（input + output） | **0**（纯检索，不碰任何 LLM） |
-| 计费来源 | DeepSeek API 余额 | 各搜索 API 自身额度（多数有免费层） |
-| 凭据 | **必须** `DEEPSEEK_API_KEY` | 各引擎各自的 API Key |
-| 结果内容 | 只有 sources；snippet 取自模型引用的片段，未被引用的结果**没有 snippet** | sources + snippet；Tavily 另给一段直接回答 |
+|            | 官方 `deepseek-official`                                                 | 本插件 `web-search-free`                   |
+| ---------- | ------------------------------------------------------------------------ | ------------------------------------------ |
+| 检索方式   | 一次完整 LLM 模型调用 + 服务端搜索工具                                   | 直接调各引擎专用检索端点                   |
+| 模型 token | 每次搜索都烧（input + output）                                           | **0**（纯检索，不碰任何 LLM）              |
+| 计费来源   | DeepSeek API 余额                                                        | 各搜索 API 自身额度（多数有免费层）        |
+| 凭据       | **必须** `DEEPSEEK_API_KEY`                                              | 各引擎各自的 API Key                       |
+| 结果内容   | 只有 sources；snippet 取自模型引用的片段，未被引用的结果**没有 snippet** | sources + snippet；Tavily 另给一段直接回答 |
 
 这正是插件名为 "free" 的核心理由——官方每次搜索烧一整轮模型 token，这里只走检索、不烧 token。
 
@@ -36,13 +36,13 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 
 ## 支持的引擎
 
-| 引擎 | 搜索 | 抓取 | 结果日期 | 获取 API Key |
-|---|:---:|:---:|:---:|---|
-| Jina AI | ✓ | ✓ | 部分 | <https://jina.ai/api-key> |
-| Exa (Metaphor) | ✓ | ✓ | 部分 | <https://dashboard.exa.ai/> |
-| Tavily | ✓ | ✓ | ✗ | <https://app.tavily.com/> |
-| Firecrawl | ✓ | ✓ | ✗ | <https://www.firecrawl.dev/> |
-| Brave Search | ✓ | ✗ | **多数** | <https://api-dashboard.search.brave.com/register> |
+| 引擎           | 搜索 | 抓取 | 结果日期 | 获取 API Key                                      |
+| -------------- | :--: | :--: | :------: | ------------------------------------------------- |
+| Jina AI        |  ✓   |  ✓   |   部分   | <https://jina.ai/api-key>                         |
+| Exa (Metaphor) |  ✓   |  ✓   |   部分   | <https://dashboard.exa.ai/>                       |
+| Tavily         |  ✓   |  ✓   |    ✗     | <https://app.tavily.com/>                         |
+| Firecrawl      |  ✓   |  ✓   |    ✗     | <https://www.firecrawl.dev/>                      |
+| Brave Search   |  ✓   |  ✗   | **多数** | <https://api-dashboard.search.brave.com/register> |
 
 **关于抓取**：Brave Search API 没有 URL 抓取端点，所以它**不会进入抓取链**（只在搜索链里）。如果只有 Brave 配了 Key，抓取链为空、会以 `No web fetch providers configured.` 报错——请再给一个支持抓取的引擎配上 Key。
 
