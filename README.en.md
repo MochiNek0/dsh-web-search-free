@@ -4,11 +4,12 @@ English | [中文](README.md)
 
 A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/dsh).
 
-It replaces dsh's default `deepseek-official` search/fetch channel with a **multi-engine + automatic fallback** channel: you provide API keys for whichever engines you choose, and it tries them in the order you arrange; if one fails (or runs out of quota) it automatically falls through to the next. A single engine may also carry multiple keys (one per line), rotated in order within that engine. All requests are issued from your browser side, never through the official search backend.
+It replaces dsh's default `deepseek-official` search/fetch channel with a **multi-engine + automatic fallback** channel: you provide API keys for whichever engines you choose, and it tries them in the order you arrange; if one fails (or runs out of quota) it automatically falls through to the next. A single engine may also carry multiple keys (one per line), rotated in order within that engine. All retrieval requests are issued by dsh's **host process (Node)** straight to each engine — never through the official search backend, and never through an LLM. The browser side holds only the settings card and issues no network requests.
 
 - Registers as a dsh `web` capability channel (providing both `searchProvider` and `fetchProvider`, both with id `web-search-free`).
 - Ships a Web settings card (Settings → Plugins → **Web Search Free**) with drag-to-reorder and per-engine key entry.
-- Installs as a dsh bundle layer: installing takes over web search/fetch, uninstalling auto-reverts to the default channel — no manual profile edits.
+- Installs as a dsh bundle layer: installing takes over web search/fetch; uninstalling (plus a dsh restart) reverts to the default channel — no manual profile edits.
+- The model-facing `web_fetch` tool can be switched on and off from the card — the switch mounts and unmounts the tool, rather than leaving it in place to fail.
 
 ## Why "free": the billing difference vs. the official channel
 
@@ -26,21 +27,28 @@ This plugin instead calls each engine's **dedicated retrieval endpoint** (e.g. T
 | Retrieval method | One full LLM model call + server-side search tool | Direct calls to each engine's dedicated retrieval endpoint |
 | Model tokens | Burned every search (input + output) | **0** (pure retrieval, no LLM involved) |
 | Billed against | DeepSeek API balance | Each search API's own quota (most have a free tier) |
-| Credentials | `DEEPSEEK_API_KEY` | Per-engine API keys |
+| Credentials | **Requires** `DEEPSEEK_API_KEY` | Per-engine API keys |
+| Result content | Sources only; snippets come from the model's citations, so an uncited result carries **no snippet** | Sources + snippets; Tavily also returns a direct answer |
 
 That's the core reason the plugin is named "free" — the official channel burns a whole model turn per search, while this one does pure retrieval and burns zero tokens.
 
+> One more trap worth knowing: the official channel **hard-requires `DEEPSEEK_API_KEY`**. If your conversation model runs through a third-party route (a self-hosted provider, a relay, …) you likely never configured that key — and the official provider's `available()` only checks whether *a key resolver exists* (one always does), so dsh selects it as usual and **only throws `WEB_PROVIDER_CREDENTIAL_MISSING` once the model actually calls `web_search`**. Nothing in the UI hints at it. This plugin needs no LLM credential at all.
+
 ## Supported engines
 
-| Engine | Search | Fetch | Get an API key |
-|---|:---:|:---:|---|
-| Jina AI | ✓ | ✓ | <https://jina.ai/api-key> |
-| Exa (Metaphor) | ✓ | ✓ | <https://dashboard.exa.ai/> |
-| Tavily | ✓ | ✓ | <https://app.tavily.com/> |
-| Firecrawl | ✓ | ✓ | <https://www.firecrawl.dev/> |
-| Brave Search | ✓ | ✗ | <https://api-dashboard.search.brave.com/register> |
+| Engine | Search | Fetch | Result dates | Get an API key |
+|---|:---:|:---:|:---:|---|
+| Jina AI | ✓ | ✓ | some | <https://jina.ai/api-key> |
+| Exa (Metaphor) | ✓ | ✓ | some | <https://dashboard.exa.ai/> |
+| Tavily | ✓ | ✓ | ✗ | <https://app.tavily.com/> |
+| Firecrawl | ✓ | ✓ | ✗ | <https://www.firecrawl.dev/> |
+| Brave Search | ✓ | ✗ | **most** | <https://api-dashboard.search.brave.com/register> |
 
-> Brave supports search only, not URL fetch. If your fetch chain only has a Brave key configured, fetch will fail — please also configure a key for an engine that supports fetch.
+**On fetch**: the Brave Search API has no URL-fetch endpoint, so it **never enters the fetch chain** (search only). If Brave is the only engine with a key, the fetch chain is empty and fails with `No web fetch providers configured.` — configure a key for an engine that supports fetch as well.
+
+**On result dates**: `publishedAt` is what lets the model judge how current a result is, and engines differ sharply (measured coverage from a single query, indicative only): Brave `page_age` 18/20, Exa `publishedDate` 4/10, Jina `publishedTime` 1–3/10. Tavily's `published_date` is returned **only under `topic: 'news'`**, and this plugin runs general web search, so it is empty in practice. Firecrawl's search results carry only url/title/description — no date field at all.
+
+> If recency matters to you, move Brave up the call order — at the cost of Tavily's direct answer and its longer excerpts.
 
 ## Prerequisites
 
@@ -100,7 +108,7 @@ Open the **Settings → Plugins → Web Search Free** card:
 ## Verification
 
 1. Start the Web UI with `dsh web`.
-2. Ask the model to use web search/fetch in a conversation (e.g. "search for today's news" or "fetch the content of https://example.com").
+2. Ask the model to use web search/fetch in a conversation (e.g. "search for today's news" or "fetch the content of https://example.com"). Fetching requires **"Enable web_fetch"** to be on in the card; otherwise the tool is not in the model's catalog at all.
 3. The request flows through the `web-search-free` channel in your arranged engine order; on a failure you'll see `Provider <name> ... failed. Trying next provider ...` in the logs, then the next engine is tried automatically.
 
 ## Updating
@@ -136,6 +144,10 @@ This plugin is a dsh **bundle layer** (`package.json` declares `dsh.bundle.patch
 - uses a same-id `web` override layer to repoint both `searchProvider` and `fetchProvider` to `web-search-free`, overriding the `deepseek-official` that dsh-base pins.
 
 The host half (`src/index.ts`, `inject: ['web']`) registers search and fetch providers into `ctx.web`, iterating configured-key engines in `providerOrder` order with fallback; each engine's key field may hold multiple values (one per line), rotated in order within the engine. The client half (`src/client.tsx`) registers a React card on the Plugins settings page, reading and writing the same `web-search-free` settings namespace. The two halves are aligned by that namespace string.
+
+Mounting `web_fetch` is the plugin's own job rather than something the bundle patch does. The reason is that tool-web decides **tool visibility at mount time** — its docs state "Enablement controls tool registration; an enabled tool remains visible when its provider is unavailable" — so a switch that only the capability channel reads could make `web_fetch` fail but never disappear. And bundle patch layers are read once at boot and are not hot-watched. So the host half resolves the **running dsh's own** `@deepseek-ai/dsh-tool-web` via `createRequire(ctx.baseUrl)` against the profile directory and mounts it as a child fiber with `{ search: false, fetch: true }`: `ctx.plugin` registers into the global tool layer every agent scope inherits, and on dispose tool-web's own effects withdraw `web_fetch` along with its prompt section. `search: false` keeps this out of the `web_search` business entirely — whatever the composition already mounts (a preset's scoped row on the Web surface) stays that name's sole owner.
+
+A resolution or mount failure degrades to a single warn: it never throws and never produces an unhandled rejection, and the search path is unaffected.
 
 The build has two steps (the package declares `"type": "module"`): `tsconfig.json` (`module: NodeNext`) compiles the host half to ESM (`dist/index.js` etc., matching dsh's ESM runtime and avoiding the load race triggered when CJS `require()`s an ESM dependency); `tsconfig.client.json` (`module: CommonJS`) compiles `dist/client.js` separately, which `wrap-client.cjs` then wraps as `window.__ModuleLoader__.load(...)` so it can be loaded by dsh's browser-side module loader. The host half imports `Schema` from `@deepseek-ai/schemastery` (not the legacy `cordis`), and `Context` is imported as a type only from `@deepseek-ai/cordis`.
 

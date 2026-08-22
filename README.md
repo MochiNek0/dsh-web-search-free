@@ -4,11 +4,12 @@
 
 面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/dsh) 的免费 Web Search / 网页抓取插件。
 
-它把 dsh 默认的 `deepseek-official` 搜索/抓取通道，替换成一个**多引擎 + 自动 fallback** 的通道：你填入哪些引擎的 API Key，它就按你排定的顺序依次尝试，前一个失败（或额度耗尽）会自动落到下一个；同一引擎也可以填多个 Key（每行一个），引擎内 Key 同样按顺序轮换。所有请求都从你的浏览器侧发起，不经过官方搜索后端。
+它把 dsh 默认的 `deepseek-official` 搜索/抓取通道，替换成一个**多引擎 + 自动 fallback** 的通道：你填入哪些引擎的 API Key，它就按你排定的顺序依次尝试，前一个失败（或额度耗尽）会自动落到下一个；同一引擎也可以填多个 Key（每行一个），引擎内 Key 同样按顺序轮换。所有检索请求都由 dsh 的**宿主进程（Node）**直接发往各引擎，不经过官方搜索后端、也不经过任何 LLM；浏览器侧只有那张设置卡片，不发任何网络请求。
 
 - 注册为 dsh 的 `web` 能力通道（同时提供 `searchProvider` 与 `fetchProvider`，id 均为 `web-search-free`）。
 - 自带一个 Web 设置卡片（设置 → 插件 → **Web Search Free**），可拖动排序、逐个填 Key。
-- 作为 dsh bundle 层安装：装上即接管 web 搜索/抓取，卸载即自动回落到默认通道，无需手改 profile。
+- 作为 dsh bundle 层安装：装上即接管 web 搜索/抓取，卸载（并重启 dsh）后回落到默认通道，无需手改 profile。
+- 可在卡片里开关模型侧的 `web_fetch` 工具——开关即挂载/卸载该工具，不是留着它报错。
 
 ## 为什么是 free 的：与官方通道的计费差异
 
@@ -26,21 +27,28 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 | 检索方式 | 一次完整 LLM 模型调用 + 服务端搜索工具 | 直接调各引擎专用检索端点 |
 | 模型 token | 每次搜索都烧（input + output） | **0**（纯检索，不碰任何 LLM） |
 | 计费来源 | DeepSeek API 余额 | 各搜索 API 自身额度（多数有免费层） |
-| 凭据 | `DEEPSEEK_API_KEY` | 各引擎各自的 API Key |
+| 凭据 | **必须** `DEEPSEEK_API_KEY` | 各引擎各自的 API Key |
+| 结果内容 | 只有 sources；snippet 取自模型引用的片段，未被引用的结果**没有 snippet** | sources + snippet；Tavily 另给一段直接回答 |
 
 这正是插件名为 "free" 的核心理由——官方每次搜索烧一整轮模型 token，这里只走检索、不烧 token。
 
+> 还有一个容易踩的坑：官方通道**强制依赖 `DEEPSEEK_API_KEY`**。如果你的对话模型走的是第三方渠道（自建 provider、中转站等），你很可能根本没配这个 key——而官方 provider 的 `available()` 只检查"有没有 key 解析器"（永远有），所以 dsh 会照常选中它，**直到模型真的调用 `web_search` 才抛 `WEB_PROVIDER_CREDENTIAL_MISSING`**，UI 上看不出问题。本插件不依赖任何 LLM 凭据。
+
 ## 支持的引擎
 
-| 引擎 | 搜索 | 抓取 | 获取 API Key |
-|---|:---:|:---:|---|
-| Jina AI | ✓ | ✓ | <https://jina.ai/api-key> |
-| Exa (Metaphor) | ✓ | ✓ | <https://dashboard.exa.ai/> |
-| Tavily | ✓ | ✓ | <https://app.tavily.com/> |
-| Firecrawl | ✓ | ✓ | <https://www.firecrawl.dev/> |
-| Brave Search | ✓ | ✗ | <https://api-dashboard.search.brave.com/register> |
+| 引擎 | 搜索 | 抓取 | 结果日期 | 获取 API Key |
+|---|:---:|:---:|:---:|---|
+| Jina AI | ✓ | ✓ | 部分 | <https://jina.ai/api-key> |
+| Exa (Metaphor) | ✓ | ✓ | 部分 | <https://dashboard.exa.ai/> |
+| Tavily | ✓ | ✓ | ✗ | <https://app.tavily.com/> |
+| Firecrawl | ✓ | ✓ | ✗ | <https://www.firecrawl.dev/> |
+| Brave Search | ✓ | ✗ | **多数** | <https://api-dashboard.search.brave.com/register> |
 
-> Brave 仅支持搜索，不支持 URL 抓取。若你的抓取链路上只有 Brave 有 Key，抓取会失败——请再给一个支持抓取的引擎配上 Key。
+**关于抓取**：Brave Search API 没有 URL 抓取端点，所以它**不会进入抓取链**（只在搜索链里）。如果只有 Brave 配了 Key，抓取链为空、会以 `No web fetch providers configured.` 报错——请再给一个支持抓取的引擎配上 Key。
+
+**关于结果日期**：`publishedAt` 决定模型能否判断一条结果的时效性，各引擎差别很大（下面是单次查询的实测覆盖率，仅供参考）：Brave `page_age` 18/20、Exa `publishedDate` 4/10、Jina `publishedTime` 1~3/10；Tavily 的 `published_date` **仅在 `topic: 'news'` 下返回**，本插件走通用网页搜索，因此实际为空；Firecrawl 的搜索结果只有 url/title/description，没有日期字段。
+
+> 如果时效性判断对你重要，可以把 Brave 往调用顺序前面挪——代价是丢掉 Tavily 的直接回答段和较长的摘录。
 
 ## 前置条件
 
@@ -100,7 +108,7 @@ dsh web          # 等价于 dsh --profile web
 ## 验证
 
 1. `dsh web` 启动 Web 界面。
-2. 在对话里让模型用 Web 搜索/抓取（例如「搜一下今天的新闻」或「抓取 https://example.com 的内容」）。
+2. 在对话里让模型用 Web 搜索/抓取（例如「搜一下今天的新闻」或「抓取 https://example.com 的内容」）。抓取需要卡片里的 **「启用 web_fetch」** 处于开启状态，否则模型的工具表里没有这个工具。
 3. 请求会经 `web-search-free` 通道按你排定的引擎顺序执行；某个引擎失败时会在日志里看到 `Provider <name> ... failed. Trying next provider ...`，随后自动尝试下一个。
 
 ## 更新
@@ -136,6 +144,10 @@ dsh plugin --profile web remove dsh-web-search-free
 - 用一条同 id 的 `web` 覆盖层，把 `searchProvider` 与 `fetchProvider` 都重指到 `web-search-free`，从而盖过 `dsh-base` 里钉死的 `deepseek-official`。
 
 宿主半边（`src/index.ts`，`inject: ['web']`）向 `ctx.web` 注册搜索与抓取 provider，内部按 `providerOrder` 顺序遍历「已配 Key」的引擎做 fallback；每个引擎的 Key 字段可填多个（每行一个），引擎内也会按行顺序逐个轮换。客户端半边（`src/client.tsx`）在「插件」设置页注册一张 React 卡片，读写同一命名空间 `web-search-free` 的设置。两层靠这个命名空间字符串对齐。
+
+`web_fetch` 的挂载由插件自己负责，而不是靠 bundle patch。原因是 tool-web 的**工具可见性在挂载时就定了**——它的文档写明「Enablement controls tool registration; an enabled tool remains visible when its provider is unavailable」，所以一个只被能力通道读取的开关只能让 `web_fetch` 报错、不能让它消失。而 bundle patch 层只在启动时读一次、不热更。因此宿主半边用 `createRequire(ctx.baseUrl)` 从 profile 目录解析出**运行中 dsh 自己那一份** `@deepseek-ai/dsh-tool-web`，以 `{ search: false, fetch: true }` 挂成子 fiber：`ctx.plugin` 注册进所有 agent 作用域都继承的全局工具层，dispose 时 tool-web 自身的 effect 会把 `web_fetch` 和它的 prompt section 一并撤掉。`search: false` 是为了不去碰 `web_search` 这个名字——组合里已有的所有者（Web 界面上是 agent preset 的作用域行）保持唯一。
+
+解析或挂载失败一律降级为一条 warn，不抛出、不产生 unhandled rejection，搜索链路不受影响。
 
 构建分两步（包声明 `"type": "module"`）：`tsconfig.json`（`module: NodeNext`）把宿主半边编成 ESM 产物（`dist/index.js` 等，与 dsh 运行时同为 ESM，避免 CJS `require()` 一个 ESM 依赖时触发的加载竞态）；`tsconfig.client.json`（`module: CommonJS`）单独编出 `dist/client.js`，再由 `wrap-client.cjs` 包成 `window.__ModuleLoader__.load(...)`，使其能被 dsh 的浏览器侧模块加载器加载。宿主半边从 `@deepseek-ai/schemastery` 取 `Schema`（而非旧版 `cordis`），`Context` 仅作类型从 `@deepseek-ai/cordis` 引入。
 
