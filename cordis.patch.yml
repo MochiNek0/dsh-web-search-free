@@ -21,3 +21,22 @@
   config:
     searchProvider: web-search-free
     fetchProvider: web-search-free
+
+# `web_fetch` is deliberately NOT patched on here.
+#
+# Every composition ships the model-facing fetch tool off: dsh-base's `tool-web`
+# row pins `fetch: false`, dsh-web-app disables that row outright (part of moving
+# the whole agent tool plane behind agent presets), and the presets the Web
+# surface actually mounts — `dsh/config/agent-presets/*/agent.cordis.yml` —
+# pin `fetch: false` again. Preset files are loaded by dsh-agent-presets from
+# its own roots and are NOT part of the profile patch stack, so a bundle patch
+# cannot reach them anyway.
+#
+# Turning it on from here would work (registering into the global tool layer
+# every agent scope inherits) but would be a STATIC choice: bundle patch layers
+# are read once at boot and are not hot-watched — runProfile watches only the
+# profile's own cordis.patch.yml and $DSH_HOME/cordis.patch.yml. So the plugin
+# mounts tool-web itself instead, as a child fiber keyed on the `enableFetch`
+# setting; see `createFetchToolMount` in src/index.ts. That keeps the switch
+# live and keeps this file from fighting it — patching `fetch: true` here as
+# well would double-register `web_fetch` and throw.

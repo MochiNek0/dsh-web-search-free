@@ -90,9 +90,12 @@ dsh web          # 等价于 dsh --profile web
 1. 点开卡片，每一行对应一个引擎。
 2. 在对应引擎的输入框粘贴 API Key，点行内「获取 API Key ↗」可直达各引擎的申请页。每个引擎支持填多个 Key：**每行一个**，引擎内会按行顺序轮换。
 3. **拖动每一行**调整调用顺序：排在前面的引擎优先调用，失败则按顺序 fallback；同一引擎的多个 Key 也会逐个尝试，任一 (引擎, Key) 成功即返回，全部失败才报错。未填 Key 的引擎不进入调用链。
-4. 点「保存」。Key 通过 dsh 的设置命名空间（`web-search-free`）持久化，下一次搜索即时生效，无需重启。
+4. 引擎列表上方有 **「启用 web_fetch（URL 抓取）」** 开关。开启时模型多一个 `web_fetch` 工具，可以对指定 URL 取全文；关闭时该工具会从模型的工具表里**移除**（不是留着报错），只保留搜索。切换即时生效，无需重启。
+5. 点「保存」。配置通过 dsh 的设置命名空间（`web-search-free`）持久化，下一次搜索即时生效，无需重启。
 
 **至少配置一个引擎的 Key**，否则搜索/抓取会以 `No web search providers configured.` 报错。
+
+> 关于 `web_fetch`：dsh 官方组合默认把它关掉（模型自选请求目标，抓取 provider 不做 SSRF 防护）。本插件把这个选择交给你，默认开启。若你在意出网面，关掉即可——代价是模型无法读取你贴给它的 URL，也无法精读长文档，只能靠搜索摘要。
 
 ## 验证
 
@@ -118,7 +121,12 @@ dsh plugin --profile web update dsh-web-search-free
 dsh plugin --profile web remove dsh-web-search-free
 ```
 
-对账会把本插件从 `dsh.profile.bundles` 移除，web 搜索/抓取**自动回落到 dsh-base 的 `deepseek-official` 默认通道**——无需手改 profile 或 patch。
+对账会把本插件从 `dsh.profile.bundles` 移除，web 搜索/抓取**回落到 dsh-base 的 `deepseek-official` 默认通道**——无需手改 profile 或 patch。
+
+两点需要注意：
+
+- **卸载前先点卡片底部的「清空全部配置」**。dsh 的卸载流程不会删除设置命名空间里存的东西，你的 API Key 会留在 `$DSH_HOME/settings.yaml` 里。这个按钮会把本插件写入的所有值清掉（需点两次确认）。清空后文件里会剩一个空的 `web-search-free:` 键——不含任何值，客户端没有 API 能删掉键本身。
+- **卸载后需要重启 dsh** 才能真正回落到官方通道。`web` 行的 provider 选择是启动时组合出来的，卸载只会让本插件的条目在当前进程里失效；重启前搜索会报 `WEB_PROVIDER_CONFIGURED_MISSING`。
 
 ## 工作原理
 

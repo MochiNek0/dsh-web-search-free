@@ -90,9 +90,12 @@ Open the **Settings → Plugins → Web Search Free** card:
 1. Expand the card; each row maps to one engine.
 2. Paste the API key into the matching engine's input; the in-row "Get API key ↗" link goes straight to each engine's signup page. An engine may carry multiple keys: **one per line**, rotated in order within the engine.
 3. **Drag each row** to set the call order: engines higher up are tried first, failing through to the next in order; multiple keys for the same engine are also tried in turn — the first successful (engine, key) pair returns, and only an all-fail raises an error. Engines with no key never enter the call chain.
-4. Click "Save". Keys persist through the dsh settings namespace (`web-search-free`) and take effect on the next search, with no restart.
+4. Above the engine list is the **"Enable web_fetch (URL retrieval)"** switch. On, the model gets a `web_fetch` tool that pulls the full text of a given URL; off, that tool is **removed** from the model's catalog (not left in place to fail), leaving search only. Toggling takes effect immediately, with no restart.
+5. Click "Save". Settings persist through the dsh settings namespace (`web-search-free`) and take effect on the next search, with no restart.
 
 **Configure at least one engine's key**, otherwise search/fetch fails with `No web search providers configured.`
+
+> On `web_fetch`: dsh's stock compositions ship it disabled (the model picks the request target and fetch providers defer SSRF protection). This plugin hands you the choice, enabled by default. Turn it off if the outbound surface concerns you — the cost is that the model can no longer read a URL you paste, nor read a long document in depth; it only sees search snippets.
 
 ## Verification
 
@@ -118,7 +121,12 @@ dsh plugin --profile web update dsh-web-search-free
 dsh plugin --profile web remove dsh-web-search-free
 ```
 
-Reconciliation removes this plugin from `dsh.profile.bundles`, and web search/fetch **auto-reverts to dsh-base's `deepseek-official` default channel** — no manual profile or patch edit.
+Reconciliation removes this plugin from `dsh.profile.bundles`, and web search/fetch **reverts to dsh-base's `deepseek-official` default channel** — no manual profile or patch edit.
+
+Two caveats:
+
+- **Click "Clear all settings" at the bottom of the card before uninstalling.** dsh's uninstall flow does not delete a settings namespace's stored section, so your API keys would stay in `$DSH_HOME/settings.yaml`. That button erases every value this plugin wrote (click twice to confirm). An empty `web-search-free:` key remains in the file afterwards — it holds no values, and no client-side API can delete the key itself.
+- **Restart dsh after uninstalling** for the fallback to actually take effect. The `web` row's provider selection is composed at boot; uninstalling only deactivates this plugin's entry in the running process, and until a restart search fails with `WEB_PROVIDER_CONFIGURED_MISSING`.
 
 ## How it works
 
