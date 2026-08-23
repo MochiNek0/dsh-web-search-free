@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-free",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
   "keywords": [
     "dsh-plugin",
@@ -47,7 +47,6 @@
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && node wrap-client.cjs"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.0.1-rc.3",
     "@deepseek-ai/schemastery": "^3.18.1"
   },
   "devDependencies": {
