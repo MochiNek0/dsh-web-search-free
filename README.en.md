@@ -151,6 +151,8 @@ A resolution or mount failure degrades to a single warn: it never throws and nev
 
 The build has two steps (the package declares `"type": "module"`): `tsconfig.json` (`module: NodeNext`) compiles the host half to ESM (`dist/index.js` etc., matching dsh's ESM runtime and avoiding the load race triggered when CJS `require()`s an ESM dependency); `tsconfig.client.json` (`module: CommonJS`) compiles `dist/client.js` separately, which `wrap-client.cjs` then wraps as `window.__ModuleLoader__.load(...)` so it can be loaded by dsh's browser-side module loader. The host half imports `Schema` from `@deepseek-ai/schemastery` (not the legacy `cordis`), and `Context` is imported as a type only from `@deepseek-ai/cordis`.
 
+The plugin is installed *beside* a profile, so every host service must resolve to the ONE instance the running dsh already loaded. Any `@deepseek-ai/*` entry in `dependencies` — or in `peerDependencies` without `optional: true`, which pnpm auto-installs — becomes a private second copy inside the user's profile; under a hoisted node_modules it lands at the profile root and shadows the harness's own, so Cordis Service identities stop matching. That failure only appears on someone else's machine and a local `pnpm build` can never surface it, so `prepublishOnly` runs `scripts/check-package.cjs` as a gate: no host package in `dependencies`, host peers must be optional, dist's actual imports and the declared dependencies must agree both ways, and `exports` condition order plus the wrapped client bundle are verified. Run `pnpm run check` after touching `package.json`.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).

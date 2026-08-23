@@ -151,6 +151,8 @@ dsh plugin --profile web remove dsh-web-search-free
 
 构建分两步（包声明 `"type": "module"`）：`tsconfig.json`（`module: NodeNext`）把宿主半边编成 ESM 产物（`dist/index.js` 等，与 dsh 运行时同为 ESM，避免 CJS `require()` 一个 ESM 依赖时触发的加载竞态）；`tsconfig.client.json`（`module: CommonJS`）单独编出 `dist/client.js`，再由 `wrap-client.cjs` 包成 `window.__ModuleLoader__.load(...)`，使其能被 dsh 的浏览器侧模块加载器加载。宿主半边从 `@deepseek-ai/schemastery` 取 `Schema`（而非旧版 `cordis`），`Context` 仅作类型从 `@deepseek-ai/cordis` 引入。
 
+插件是装在 profile **旁边**的，所有宿主服务必须解析到运行中 dsh 的那**一份**实例。任何 `@deepseek-ai/*` 一旦进了 `dependencies`（或进了非 optional 的 `peerDependencies`——pnpm 会自动装它），就会在用户的 profile 里多出一份私有副本；hoisted 布局下它平铺到 profile 根目录，遮蔽宿主自己那份，Cordis Service 身份不再相等。这类问题只在别人机器上出现，本地 `pnpm build` 永远看不见，所以 `prepublishOnly` 会跑 `scripts/check-package.cjs` 把它挡在发布之前：禁止宿主包进 `dependencies`、要求宿主 peer 标 optional、核对 dist 的实际 import 与声明的依赖双向一致、校验 `exports` 条件顺序与客户端 bundle 是否已包装。改动 `package.json` 后请跑 `pnpm run check`。
+
 ## 许可证
 
 MIT，见 [LICENSE](LICENSE)。
