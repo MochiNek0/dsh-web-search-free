@@ -1,6 +1,6 @@
 # dsh-web-search-free
 
-中文 | [English](README.en.md)
+中文 | [English](https://github.com/MochiNek0/dsh-web-search-free/blob/main/README.en.md)
 
 面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的免费 Web Search / 网页抓取插件。
 
@@ -155,4 +155,4 @@ dsh plugin --profile web remove dsh-web-search-free
 
 ## 许可证
 
-MIT，见 [LICENSE](LICENSE)。
+MIT，见 [LICENSE](https://github.com/MochiNek0/dsh-web-search-free/blob/main/LICENSE)。

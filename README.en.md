@@ -1,6 +1,6 @@
 # dsh-web-search-free
 
-English | [中文](README.md)
+English | [中文](https://github.com/MochiNek0/dsh-web-search-free/blob/main/README.md)
 
 A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness).
 
@@ -155,4 +155,4 @@ The plugin is installed *beside* a profile, so every host service must resolve t
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](https://github.com/MochiNek0/dsh-web-search-free/blob/main/LICENSE).

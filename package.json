@@ -6,6 +6,14 @@
     "dsh-plugin",
     "web-search"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MochiNek0/dsh-web-search-free.git"
+  },
+  "homepage": "https://github.com/MochiNek0/dsh-web-search-free#readme",
+  "bugs": {
+    "url": "https://github.com/MochiNek0/dsh-web-search-free/issues"
+  },
   "dsh": {
     "name": "web-search-free",
     "client": {
