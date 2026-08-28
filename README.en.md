@@ -7,7 +7,7 @@ A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github
 It replaces dsh's default `deepseek-official` search/fetch channel with a **multi-engine + automatic fallback** channel: you provide API keys for whichever engines you choose, and it tries them in the order you arrange; if one fails (or runs out of quota) it automatically falls through to the next. A single engine may also carry multiple keys (one per line), rotated in order within that engine. All retrieval requests are issued by dsh's **host process (Node)** straight to each engine — never through the official search backend, and never through an LLM. The browser side holds only the settings card and issues no network requests.
 
 - Registers as a dsh `web` capability channel (providing both `searchProvider` and `fetchProvider`, both with id `web-search-free`).
-- Ships a Web settings card (Settings → Plugins → **Web Search Free**) with drag-to-reorder and per-engine key entry.
+- Ships a Web settings card (Settings → Plugins → **Web Search Free**) with drag-to-reorder and per-engine key entry; its copy follows the dsh Language preference, in English or Chinese.
 - Installs as a dsh bundle layer: installing takes over web search/fetch; uninstalling (plus a dsh restart) reverts to the default channel — no manual profile edits.
 - The model-facing `web_fetch` tool can be switched on and off from the card — the switch mounts and unmounts the tool, rather than leaving it in place to fail.
 

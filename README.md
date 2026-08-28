@@ -5,8 +5,9 @@
 面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的免费 Web Search / 网页抓取插件。
 
 它把 dsh 默认的 `deepseek-official` 搜索/抓取通道，替换成一个**多引擎 + 自动 fallback** 的通道：你填入哪些引擎的 API Key，它就按你排定的顺序依次尝试，前一个失败（或额度耗尽）会自动落到下一个；同一引擎也可以填多个 Key（每行一个），引擎内 Key 同样按顺序轮换。所有检索请求都由 dsh 的**宿主进程（Node）**直接发往各引擎，不经过官方搜索后端、也不经过任何 LLM；浏览器侧只有那张设置卡片，不发任何网络请求。
+
 - 注册为 dsh 的 `web` 能力通道（同时提供 `searchProvider` 与 `fetchProvider`，id 均为 `web-search-free`）。
-- 自带一个 Web 设置卡片（设置 → 插件 → **Web Search Free**），可拖动排序、逐个填 Key。
+- 自带一个 Web 设置卡片（设置 → 插件 → **免费 Web 搜索**，英文界面下为 **Web Search Free**），可拖动排序、逐个填 Key；卡片文案跟随 dsh 的语言设置在中英之间切换。
 - 作为 dsh bundle 层安装：装上即接管 web 搜索/抓取，卸载（并重启 dsh）后回落到默认通道，无需手改 profile。
 - 可在卡片里开关模型侧的 `web_fetch` 工具——开关即挂载/卸载该工具，不是留着它报错。
 
@@ -35,16 +36,16 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 
 ## 支持的引擎
 
-| 引擎           | 搜索 | 抓取 | 结果日期 | 免费额度                      | 获取 API Key                                      |
-| -------------- | :--: | :--: | :------: | ----------------------------- | ------------------------------------------------- |
-| TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）   | <https://www.tinyfish.ai/pricing>                 |
-| AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）       | <https://anysearch.com/pricing>                   |
-| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零）| <https://dashboard.exa.ai/>        |
-| Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）   | <https://app.tavily.com/>                         |
-| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）| <https://www.firecrawl.dev/>          |
-| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）   | <https://api-dashboard.search.brave.com/register> |
-| SerpApi        |  ✓   |  ✗   |   弱\*   | 250 次/月（每月重置）          | <https://serpapi.com/users/sign_up>              |
-| Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）| <https://jina.ai/api-key>                  |
+| 引擎           | 搜索 | 抓取 | 结果日期 | 免费额度                                           | 获取 API Key                                      |
+| -------------- | :--: | :--: | :------: | -------------------------------------------------- | ------------------------------------------------- |
+| TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）                        | <https://www.tinyfish.ai/pricing>                 |
+| AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）                            | <https://anysearch.com/pricing>                   |
+| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                       |
+| Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                         |
+| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                      |
+| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register> |
+| SerpApi        |  ✓   |  ✗   |   弱\*   | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>               |
+| Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                         |
 
 > 表格顺序即默认调用顺序（按可持续免费量从大到小排）。Jina 虽是一次性额度，但仍会进入抓取链——只要填了 Key，`supportsFetch` 为真的引擎都会被 `getActiveProviders('fetch')` 选中，与它在搜索链里的位置无关。
 
@@ -99,7 +100,7 @@ dsh plugin --profile web add .
 dsh web          # 等价于 dsh --profile web
 ```
 
-打开 **设置 → 插件 → Web Search Free** 卡片：
+打开 **设置 → 插件 → 免费网页搜索**（英文界面下为 **Web Search Free**）卡片：
 
 1. 点开卡片，引擎分成两组：**「调用顺序」**里是已存过 Key、真正参与调用的引擎（带 `#1`、`#2` 序号）；**「其他可用引擎 (n)」**里是还没填 Key 的，默认折叠，点标题展开。每一行显示引擎名、能力徽章（`搜索 · 抓取` 或 `仅搜索`）、免费额度，以及已配置的 Key 数量。
 2. **点击某一行**展开它，会出现输入框；在输入框粘贴 API Key，点行内「获取 API Key ↗」可直达各引擎的申请页。每个引擎支持填多个 Key：**每行一个**，引擎内会按行顺序轮换。再点一次行可收起。保存后该行会自动移进「调用顺序」组。
