@@ -7,13 +7,35 @@ import * as React from 'react'
  */
 const NAMESPACE = 'web-search-free'
 
-/** All backends the host half knows about; the order here is the default fallback. */
-const PROVIDERS: { key: string; field: string; label: string; signup: string }[] = [
-  { key: 'jina', field: 'jinaApiKey', label: 'Jina AI', signup: 'https://jina.ai/api-key' },
-  { key: 'exa', field: 'exaApiKey', label: 'Exa (Metaphor)', signup: 'https://dashboard.exa.ai/' },
-  { key: 'tavily', field: 'tavilyApiKey', label: 'Tavily', signup: 'https://app.tavily.com/' },
-  { key: 'firecrawl', field: 'firecrawlApiKey', label: 'Firecrawl', signup: 'https://www.firecrawl.dev/' },
-  { key: 'brave', field: 'braveApiKey', label: 'Brave Search', signup: 'https://api-dashboard.search.brave.com/register' },
+/**
+ * All backends the host half knows about; the order here is the default fallback.
+ *
+ * `freeTier` is surfaced in the card as a short hint under each engine so the
+ * user can tell at a glance how much free runway a given engine gives. Keep it
+ * terse — it's a one-line badge, not a pricing table.
+ *
+ * `caps.search` / `caps.fetch` drive the small capability chips on each row:
+ * a search-only engine (Brave, SerpApi) shows just "搜索", one that also
+ * fetches shows "搜索 · 抓取". This mirrors `supportsFetch` on the host side.
+ */
+type ProviderMeta = {
+  key: string
+  field: string
+  label: string
+  signup: string
+  freeTier: string
+  caps: { search: true; fetch?: true }
+}
+
+const PROVIDERS: ProviderMeta[] = [
+  { key: 'tinyfish', field: 'tinyfishApiKey', label: 'TinyFish', signup: 'https://www.tinyfish.ai/pricing', freeTier: '搜索/抓取免费', caps: { search: true, fetch: true } },
+  { key: 'anysearch', field: 'anysearchApiKey', label: 'AnySearch', signup: 'https://anysearch.com/pricing', freeTier: '1000 次/天（每日重置）', caps: { search: true, fetch: true } },
+  { key: 'exa', field: 'exaApiKey', label: 'Exa (Metaphor)', signup: 'https://dashboard.exa.ai/', freeTier: '$10 credit/月（累积不清零）', caps: { search: true, fetch: true } },
+  { key: 'tavily', field: 'tavilyApiKey', label: 'Tavily', signup: 'https://app.tavily.com/', freeTier: '1000 credits/月', caps: { search: true, fetch: true } },
+  { key: 'firecrawl', field: 'firecrawlApiKey', label: 'Firecrawl', signup: 'https://www.firecrawl.dev/', freeTier: '1000 credits/月', caps: { search: true, fetch: true } },
+  { key: 'brave', field: 'braveApiKey', label: 'Brave Search', signup: 'https://api-dashboard.search.brave.com/register', freeTier: '$5 额度/月（需绑卡）', caps: { search: true } },
+  { key: 'serpapi', field: 'serpapiApiKey', label: 'SerpApi', signup: 'https://serpapi.com/users/sign_up', freeTier: '250 次/月', caps: { search: true } },
+  { key: 'jina', field: 'jinaApiKey', label: 'Jina AI', signup: 'https://jina.ai/api-key', freeTier: '10M tokens（一次性）', caps: { search: true, fetch: true } },
 ]
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key)
 const byKey = (key: string) => PROVIDERS.find((p) => p.key === key)!
@@ -41,7 +63,18 @@ export function apply(ctx: any) {
 
 type Snapshot = {
   status: 'loading' | 'ready' | 'unavailable'
-  value?: { jinaApiKey?: string; exaApiKey?: string; tavilyApiKey?: string; firecrawlApiKey?: string; braveApiKey?: string; enableFetch?: boolean; providerOrder?: string[] }
+  value?: {
+    jinaApiKey?: string
+    exaApiKey?: string
+    tavilyApiKey?: string
+    firecrawlApiKey?: string
+    braveApiKey?: string
+    anysearchApiKey?: string
+    tinyfishApiKey?: string
+    serpapiApiKey?: string
+    enableFetch?: boolean
+    providerOrder?: string[]
+  }
   /**
    * The raw user layer, as opposed to `value`'s base+user resolution. Only this
    * says whether a field is actually stored: `value` always carries the
@@ -51,17 +84,38 @@ type Snapshot = {
   writable?: boolean
 }
 
+/**
+ * A provider field is "configured" if either a draft holds a non-empty value or
+ * the resolved value does. Centralizing this keeps the collapsed summary count
+ * and the per-row badge on the same page about what counts as active.
+ */
+const isConfigured = (field: string, snapshot: Snapshot, drafts: Record<string, string>): boolean => {
+  const draft = drafts[field]
+  if (draft !== undefined) return parseKeys(draft).length > 0
+  const stored = snapshot.value?.[field as keyof NonNullable<Snapshot['value']>]
+  return typeof stored === 'string' && parseKeys(stored).length > 0
+}
+
 function WebSearchFreeCard({ scope }: { scope: any }) {
   const snapshot: Snapshot = React.useSyncExternalStore(
     React.useCallback((listener: () => void) => scope.subscribe(listener), [scope]),
     () => scope.getSnapshot(),
   )
   const [open, setOpen] = React.useState(false)
+  const [expandedRows, setExpandedRows] = React.useState<Record<string, boolean>>({})
   const [keyDrafts, setKeyDrafts] = React.useState<Record<string, string>>({})
   const [orderDraft, setOrderDraft] = React.useState<string[] | null>(null)
   const [enableFetchDraft, setEnableFetchDraft] = React.useState<boolean | null>(null)
   const [dragKey, setDragKey] = React.useState<string | null>(null)
   const [dropTarget, setDropTarget] = React.useState<string | null>(null)
+  // Which row, if any, has its drag armed. Rows are NOT permanently
+  // `draggable`: with the flag hard-on, dragging to select text inside a row's
+  // textarea starts a row drag instead, so keys cannot be edited with a mouse.
+  // Pressing the ⋮⋮ handle arms the row for the drag that immediately follows.
+  const [dragArmed, setDragArmed] = React.useState<string | null>(null)
+  // `null` = follow the default: collapsed once something is in the chain,
+  // expanded while nothing is, so a fresh install still shows every engine.
+  const [restOpen, setRestOpen] = React.useState<boolean | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [clearing, setClearing] = React.useState(false)
   // Two-click arm for the destructive clear. Deliberately NOT `window.confirm`:
@@ -83,10 +137,16 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
     const value = snapshot.value?.[field as keyof NonNullable<Snapshot['value']>]
     return typeof value === 'string' ? value : ''
   }
+  // A stored order was written against the provider set of its day, so it is a
+  // subset, not the whole list — an engine added afterwards is simply absent
+  // from it. Rendering the stored array verbatim therefore hides every new
+  // engine forever. Union it with the current defaults, exactly as the Host's
+  // own `getActiveProviders` does, so the card and the fallback chain always
+  // agree on which engines exist.
   const storedOrder = (): string[] => {
     const raw = snapshot.value?.providerOrder
-    if (Array.isArray(raw) && raw.length > 0) return raw.filter((k) => PROVIDERS.some((p) => p.key === k))
-    return DEFAULT_ORDER
+    const known = Array.isArray(raw) ? raw.filter((k) => PROVIDERS.some((p) => p.key === k)) : []
+    return Array.from(new Set([...known, ...DEFAULT_ORDER]))
   }
   const order = orderDraft ?? storedOrder()
   // enableFetch defaults to true (schema default); only an explicit false is "off".
@@ -101,7 +161,10 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
   // Anything to erase? Read the user layer, not the resolved value: the latter
   // always carries the schema defaults and would report "configured" forever.
   const userLayer = typeof snapshot.user === 'object' && snapshot.user !== null ? snapshot.user as Record<string, unknown> : {}
+  const configuredCount = PROVIDERS.filter((p) => isConfigured(p.field, snapshot, keyDrafts)).length
   const configured = Object.keys(userLayer).length > 0
+
+  const toggleRow = (key: string) => setExpandedRows((s) => ({ ...s, [key]: !s[key] }))
 
   const save = async () => {
     setSaving(true)
@@ -173,8 +236,8 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
     if (snapshot.status === 'unavailable') return [text('该连接不同步设置，无法在此配置。')]
     const children: React.ReactNode[] = []
     children.push(
-      React.createElement('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } },
-        '拖动每一行调整调用顺序：排在前面的引擎优先调用，失败则 fallback 到下一个。每个引擎可填多个 Key（每行一个），同一引擎内也会按顺序轮换。未填 Key 的引擎不进入调用链。'),
+      React.createElement('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1.6 } },
+        '填了 Key 的引擎进入「调用顺序」：排在前面的优先调用，失败则 fallback 到下一个，拖 ⋮⋮ 可改顺序。每个引擎可填多个 Key（每行一个），同一引擎内也按顺序轮换。'),
     )
     // web_fetch on/off — a top-level switch above the engine list. Search is
     // always on. The Host half owns tool-web's mount, so this genuinely adds and
@@ -218,75 +281,159 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
           ? '已开启：模型可调用 web_fetch，由上面填了 Key 的引擎按顺序抓取 URL 全文。'
           : '已关闭：web_fetch 工具会从模型的工具表里移除，只保留搜索。切换即时生效，无需重启。'),
     )
-    // One row per provider; the row's vertical position IS providerOrder, so the
-    // key inputs double as the order controls — no separate list to render.
-    children.push(
-      React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
-        ...order.map((key, index) => {
-          const provider = byKey(key)
-          const keyCount = parseKeys(keyDrafts[provider.field] ?? storedKey(provider.field)).length
-          const hasKey = keyCount > 0
-          const isDragging = dragKey === key
-          const isDropTarget = dropTarget === key
-          return React.createElement('div', {
-            key,
-            draggable: !disabled,
-            onDragStart: (e: any) => { setDragKey(key); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key) },
-            onDragEnd: () => { setDragKey(null); setDropTarget(null) },
-            onDragOver: (e: any) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragKey && dragKey !== key) setDropTarget(key) },
-            onDrop: (e: any) => {
-              e.preventDefault()
-              if (dragKey && dragKey !== key) reorder(indexOfKey(dragKey), index)
-              setDragKey(null); setDropTarget(null)
-            },
+    // Grouping is decided by what is SAVED, never by the drafts: a row that
+    // hopped to the other group on the first keystroke would move out from
+    // under the cursor mid-typing. Typing leaves the row in place and its
+    // sub-line says where it lands on save.
+    const isInChain = (provider: ProviderMeta) => parseKeys(storedKey(provider.field)).length > 0
+    const chain = order.map(byKey).filter(isInChain)
+    const rest = order.map(byKey).filter((p) => !isInChain(p))
+    const showRest = restOpen ?? chain.length === 0
+
+    // `position` is the row's 1-based place in the fallback chain, or null for
+    // an engine that has no key stored: only chain rows carry a number and are
+    // draggable, because reordering an engine that never gets called is noise.
+    const providerRow = (provider: ProviderMeta, position: number | null) => {
+      const key = provider.key
+      const hasKey = isConfigured(provider.field, snapshot, keyDrafts)
+      const keyCount = parseKeys(keyDrafts[provider.field] ?? storedKey(provider.field)).length
+      const isDragging = dragKey === key
+      const isDropTarget = dropTarget === key
+      const expanded = expandedRows[key] || false
+      const capsLabel = provider.caps.fetch ? '搜索 · 抓取' : '仅搜索'
+      const sortable = position !== null && !disabled
+      const status = position !== null
+        ? (keyCount > 0 ? `${keyCount} 个 Key · 按顺序轮换` : '已清空 · 保存后移出调用链')
+        : (keyCount > 0 ? `${keyCount} 个 Key · 保存后加入调用链` : (expanded ? '未配置' : '点击填入 Key 启用'))
+
+      return React.createElement('div', {
+        key,
+        draggable: sortable && dragArmed === key,
+        onDragStart: (e: any) => { setDragKey(key); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', key) },
+        onDragEnd: () => { setDragKey(null); setDropTarget(null); setDragArmed(null) },
+        // Releasing the handle without dragging must disarm too, or the row
+        // stays draggable and swallows the next text selection inside it.
+        onMouseUp: () => setDragArmed(null),
+        onDragOver: sortable ? (e: any) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragKey && dragKey !== key) setDropTarget(key) } : undefined,
+        onDrop: sortable ? (e: any) => {
+          e.preventDefault()
+          if (dragKey && dragKey !== key) reorder(indexOfKey(dragKey), indexOfKey(key))
+          setDragKey(null); setDropTarget(null)
+        } : undefined,
+        // A column, not a row: the expanded panel is a real second child that
+        // stacks underneath. The previous `flexBasis: '100%'` on a nowrap row
+        // could not wrap, so the panel was squeezed into the header line.
+        style: {
+          display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13,
+          borderRadius: 8, padding: '6px 10px',
+          border: isDropTarget ? '1px dashed var(--dsw-alias-brand-primary)' : '1px solid var(--dsw-alias-border-l2)',
+          background: isDragging ? 'var(--dsw-alias-bg-layer-2)' : 'var(--dsw-alias-bg-layer-3)',
+          opacity: isDragging ? 0.5 : 1,
+        },
+      },
+        // Header line: handle · order badge · label/meta · caret
+        React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+          sortable ? React.createElement('span', {
+            onMouseDown: () => setDragArmed(key),
+            title: '拖动调整调用顺序',
+            style: { flex: 'none', color: 'var(--dsw-alias-label-tertiary)', fontSize: 13, userSelect: 'none', cursor: 'grab' },
+          }, '⋮⋮') : null,
+          position !== null ? React.createElement('span', {
             style: {
-              display: 'flex', alignItems: 'center', gap: 8, fontSize: 13,
-              borderRadius: 8, padding: '8px 10px',
-              border: isDropTarget ? '1px dashed var(--dsw-alias-brand-primary)' : '1px solid var(--dsw-alias-border-l2)',
-              background: isDragging ? 'var(--dsw-alias-bg-layer-2)' : 'var(--dsw-alias-bg-layer-3)',
-              opacity: isDragging ? 0.5 : 1,
-              cursor: disabled ? 'default' : 'grab',
+              whiteSpace: 'nowrap', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 500, lineHeight: '17px', flex: 'none',
+              background: 'var(--dsw-alias-bg-module-platform)', color: 'var(--dsw-alias-label-secondary)',
             },
+          }, `#${position}`) : null,
+          // Label + meta (click to expand)
+          React.createElement('div', {
+            onClick: () => !disabled && toggleRow(key),
+            style: { display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0, cursor: disabled ? 'default' : 'pointer' },
           },
-            React.createElement('span', {
-              style: { flex: 'none', color: 'var(--dsw-alias-label-tertiary)', fontSize: 13, userSelect: 'none' },
-            }, '⋮⋮'),
-            React.createElement('span', {
-              style: {
-                whiteSpace: 'nowrap', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 500, lineHeight: '17px', flex: 'none',
-                ...(hasKey
-                  ? { background: 'var(--dsw-alias-bg-module-platform)', color: 'var(--dsw-alias-label-secondary)' }
-                  : { color: 'var(--dsw-alias-label-tertiary)' }),
-              },
-            }, hasKey ? `#${index + 1}` : '—'),
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 } },
-              React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 } },
-                React.createElement('span', { style: { color: hasKey ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)', fontWeight: 500 } }, provider.label),
-                React.createElement('a', {
-                  href: provider.signup,
-                  target: '_blank',
-                  rel: 'noreferrer',
-                  onClick: (e: any) => e.stopPropagation(),
-                  style: { fontSize: 12, color: 'var(--dsw-alias-brand-primary)', textDecoration: 'none', flex: 'none' },
-                }, '获取 API Key ↗'),
-              ),
-              React.createElement('textarea', {
-                rows: 2,
-                autoComplete: 'off',
-                spellCheck: false,
-                value: keyDrafts[provider.field] ?? storedKey(provider.field),
-                disabled,
-                placeholder: '每行一个 API Key，支持多 Key 轮换',
-                onChange: (event: any) => setKeyDrafts({ ...keyDrafts, [provider.field]: event.target.value }),
-                style: { ...inputStyle, height: 'auto', minHeight: 30, resize: 'vertical', padding: '6px 12px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '20px' },
-              }),
-              React.createElement('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } },
-                keyCount > 0 ? `${keyCount} 个 Key · 按顺序轮换` : '未配置'),
+            React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' } },
+              React.createElement('span', { style: { color: hasKey ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)', fontWeight: 500 } }, provider.label),
+              React.createElement('span', {
+                style: { whiteSpace: 'nowrap', borderRadius: 4, padding: '0 5px', fontSize: 10, lineHeight: '15px', flex: 'none', color: 'var(--dsw-alias-label-tertiary)', background: 'var(--dsw-alias-bg-layer-2)' },
+              }, capsLabel),
+              React.createElement('span', {
+                style: { whiteSpace: 'nowrap', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', flex: 'none' },
+              }, provider.freeTier),
             ),
-          )
-        }),
+            React.createElement('div', { style: { fontSize: 11, color: 'var(--dsw-alias-label-tertiary)' } }, status),
+          ),
+          React.createElement('span', {
+            onClick: (e: any) => { e.stopPropagation(); if (!disabled) toggleRow(key) },
+            style: { color: 'var(--dsw-alias-label-tertiary)', display: 'inline-flex', flex: 'none', transition: 'transform .16s', transform: expanded ? 'rotate(180deg)' : 'none', cursor: disabled ? 'default' : 'pointer', padding: 4 },
+          }, caret(12)),
+        ),
+        // Expanded key input, stacked under the header line.
+        expanded ? React.createElement('div', {
+          style: { display: 'flex', flexDirection: 'column', gap: 4 },
+        },
+          React.createElement('textarea', {
+            rows: 2,
+            autoComplete: 'off',
+            spellCheck: false,
+            value: keyDrafts[provider.field] ?? storedKey(provider.field),
+            disabled,
+            placeholder: '每行一个 API Key，支持多 Key 轮换',
+            onChange: (event: any) => setKeyDrafts({ ...keyDrafts, [provider.field]: event.target.value }),
+            style: { ...inputStyle, width: '100%', boxSizing: 'border-box', height: 'auto', minHeight: 30, resize: 'vertical', padding: '6px 12px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '20px' },
+          }),
+          React.createElement('a', {
+            href: provider.signup,
+            target: '_blank',
+            rel: 'noreferrer',
+            onClick: (e: any) => e.stopPropagation(),
+            style: { fontSize: 12, color: 'var(--dsw-alias-brand-primary)', textDecoration: 'none', alignSelf: 'flex-start' },
+          }, '获取 API Key ↗'),
+        ) : null,
+      )
+    }
+
+    // Group 1 — the actual fallback chain. Usually one to three rows, so this
+    // is the only part most users ever read.
+    children.push(
+      React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+        React.createElement('div', { style: groupLabelStyle },
+          chain.length > 0 ? `调用顺序 · ${chain.length} 个引擎（拖 ⋮⋮ 排序）` : '调用顺序'),
+        chain.length > 0
+          ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+              ...chain.map((provider, index) => providerRow(provider, index + 1)))
+          : React.createElement('div', {
+              style: {
+                fontSize: 12, color: 'var(--dsw-alias-label-tertiary)', lineHeight: 1.6,
+                borderRadius: 8, padding: '10px 12px',
+                border: '1px dashed var(--dsw-alias-border-l2)',
+              },
+            }, '还没有引擎进入调用链。在下面挑一个填入 API Key，保存后它就会出现在这里。'),
       ),
     )
+    // Group 2 — everything without a key. Collapsed by default once the chain
+    // has something in it: eight rows of engines the user is not using is the
+    // bulk of the card, and none of it is actionable until they want a new key.
+    if (rest.length > 0) {
+      children.push(
+        React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+          React.createElement('button', {
+            type: 'button',
+            onClick: () => setRestOpen(!showRest),
+            style: {
+              ...groupLabelStyle, appearance: 'none', background: 'none', border: 0, padding: 0,
+              font: 'inherit', fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+              display: 'flex', alignItems: 'center', gap: 4,
+            },
+          },
+            `其他可用引擎 (${rest.length})`,
+            React.createElement('span', {
+              style: { display: 'inline-flex', transition: 'transform .16s', transform: showRest ? 'rotate(180deg)' : 'none' },
+            }, caret(11)),
+          ),
+          showRest ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6 } },
+            ...rest.map((provider) => providerRow(provider, null)),
+          ) : null,
+        ),
+      )
+    }
     children.push(
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--dsw-alias-border-l2)', paddingTop: 12 } },
         // Left-aligned and outlined, away from 保存: this one is for uninstalling
@@ -322,6 +469,12 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
     return children
   }
 
+  // Collapsed summary: how many engines are configured, surfaced on the
+  // header so the user can see at a glance whether the plugin is ready.
+  const summary = configuredCount > 0
+    ? `${configuredCount} 个引擎已配置`
+    : '尚未配置任何引擎'
+
   return React.createElement('li', {
     style: {
       listStyle: 'none',
@@ -346,8 +499,11 @@ function WebSearchFreeCard({ scope }: { scope: any }) {
           dirty ? React.createElement('span', {
             style: { whiteSpace: 'nowrap', background: 'var(--dsw-alias-bg-module-platform)', color: 'var(--dsw-alias-label-secondary)', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 500, lineHeight: '17px' },
           }, '未保存') : null,
+          configuredCount > 0 ? React.createElement('span', {
+            style: { whiteSpace: 'nowrap', background: 'var(--dsw-alias-brand-primary)', color: '#fff', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 500, lineHeight: '17px' },
+          }, `${configuredCount} 引擎`) : null,
         ),
-        React.createElement('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } }, '免费多引擎 Web Search（拖动排序 · 按 providerOrder 顺序 fallback）'),
+        React.createElement('div', { style: { fontSize: 13, color: 'var(--dsw-alias-label-tertiary)' } }, `免费多引擎 Web Search · ${summary}`),
       ),
       React.createElement('span', {
         style: { color: 'var(--dsw-alias-label-tertiary)', display: 'inline-flex', flex: 'none', transition: 'transform .16s', transform: open ? 'rotate(180deg)' : 'none' },
@@ -389,6 +545,20 @@ const btnPrimaryStyle = {
   font: 'inherit', fontSize: 13, padding: '5px 14px', borderRadius: 8, cursor: 'pointer',
   border: '1px solid transparent', background: 'var(--dsw-alias-label-primary)',
   color: 'var(--dsw-alias-bg-layer-3)',
+}
+
+const groupLabelStyle = {
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: '.2px',
+  color: 'var(--dsw-alias-label-tertiary)',
+}
+
+/** The single chevron used by every expander in this card. */
+function caret(size: number) {
+  return React.createElement('svg', { width: size, height: size, viewBox: '0 0 14 14', fill: 'none', 'aria-hidden': true },
+    React.createElement('path', { d: 'M3.5 5.5L7 9l3.5-3.5', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round' }),
+  )
 }
 
 function text(value: string) {

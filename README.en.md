@@ -36,17 +36,24 @@ That's the core reason the plugin is named "free" — the official channel burns
 
 ## Supported engines
 
-| Engine         | Search | Fetch | Result dates | Get an API key                                    |
-| -------------- | :----: | :---: | :----------: | ------------------------------------------------- |
-| Jina AI        |   ✓    |   ✓   |     some     | <https://jina.ai/api-key>                         |
-| Exa (Metaphor) |   ✓    |   ✓   |     some     | <https://dashboard.exa.ai/>                       |
-| Tavily         |   ✓    |   ✓   |      ✗       | <https://app.tavily.com/>                         |
-| Firecrawl      |   ✓    |   ✓   |      ✗       | <https://www.firecrawl.dev/>                      |
-| Brave Search   |   ✓    |   ✗   |   **most**   | <https://api-dashboard.search.brave.com/register> |
+| Engine         | Search | Fetch | Result dates | Free tier                          | Get an API key                                    |
+| -------------- | :----: | :---: | :----------: | ---------------------------------- | ------------------------------------------------- |
+| TinyFish       |   ✓    |   ✓   |     some     | Search/fetch free (rate-limited only) | <https://www.tinyfish.ai/pricing>              |
+| AnySearch      |   ✓    |   ✓   |      ✗       | 1,000/day (resets daily)           | <https://anysearch.com/pricing>                   |
+| Exa (Metaphor) |   ✓    |   ✓   |     some     | $20 on signup + $10/month credit (cumulative, no monthly reset) | <https://dashboard.exa.ai/> |
+| Tavily         |   ✓    |   ✓   |      ✗       | 1,000 credits/month (monthly reset) | <https://app.tavily.com/>                        |
+| Firecrawl      |   ✓    |   ✓   |      ✗       | 1,000 credits/month (search costs 2 credits/10 results) | <https://www.firecrawl.dev/>          |
+| Brave Search   |   ✓    |   ✗   |   **most**   | $5 credit/month (card required, not charged) | <https://api-dashboard.search.brave.com/register> |
+| SerpApi        |   ✓    |   ✗   |     weak     | 250/month (monthly reset)           | <https://serpapi.com/users/sign_up>              |
+| Jina AI        |   ✓    |   ✓   |     some     | New key gets 10M tokens (one-time, until exhausted) | <https://jina.ai/api-key>                |
 
-**On fetch**: the Brave Search API has no URL-fetch endpoint, so it **never enters the fetch chain** (search only). If Brave is the only engine with a key, the fetch chain is empty and fails with `No web fetch providers configured.` — configure a key for an engine that supports fetch as well.
+> The table order is the default call order (sorted by sustainable free volume, largest first). Jina is a one-time grant but still enters the fetch chain — any engine with a key and `supportsFetch: true` is picked by `getActiveProviders('fetch')` regardless of its position in the search chain.
 
-**On result dates**: `publishedAt` is what lets the model judge how current a result is, and engines differ sharply (measured coverage from a single query, indicative only): Brave `page_age` 18/20, Exa `publishedDate` 4/10, Jina `publishedTime` 1–3/10. Tavily's `published_date` is returned **only under `topic: 'news'`**, and this plugin runs general web search, so it is empty in practice. Firecrawl's search results carry only url/title/description — no date field at all.
+> **On how each free tier works**: Jina is a **one-time token grant** (new keys get 10M tokens; `s.jina.ai` search costs a fixed 10,000 tokens per request, so that's roughly 1,000 searches before it's gone — no reset, top up or rotate keys); Exa is a **cumulative credit balance** ($20 on signup + $10/month added, balance doesn't reset, ~1,400 basic searches); AnySearch is **daily reset** (1,000/day, ~30k/month); Tavily / Firecrawl / SerpApi are **monthly reset**; Brave is also a monthly $5 credit reset; TinyFish's search and fetch are completely free, rate-limited only (free tier: Search 30 req/min, Fetch 150 url/min).
+
+**On fetch**: Brave Search and SerpApi are pure SERP scrapers with no URL-fetch endpoint, so they **never enter the fetch chain** (search only). If only those are configured with keys, the fetch chain is empty and fails with `No web fetch providers configured.` — configure a key for an engine that supports fetch as well.
+
+**On result dates**: `publishedAt` is what lets the model judge how current a result is, and engines differ sharply (measured coverage from a single query, indicative only): Brave `page_age` 18/20, Exa `publishedDate` 4/10, Jina `publishedTime` 1–3/10, TinyFish `date` (reliable for news, partial for web), SerpApi `date` (weak, display string). Tavily's `published_date` is returned **only under `topic: 'news'`**, and this plugin runs general web search, so it is empty in practice. Firecrawl and AnySearch carry no date field at all.
 
 > If recency matters to you, move Brave up the call order — at the cost of Tavily's direct answer and its longer excerpts.
 
@@ -95,11 +102,11 @@ dsh web          # equivalent to dsh --profile web
 
 Open the **Settings → Plugins → Web Search Free** card:
 
-1. Expand the card; each row maps to one engine.
-2. Paste the API key into the matching engine's input; the in-row "Get API key ↗" link goes straight to each engine's signup page. An engine may carry multiple keys: **one per line**, rotated in order within the engine.
-3. **Drag each row** to set the call order: engines higher up are tried first, failing through to the next in order; multiple keys for the same engine are also tried in turn — the first successful (engine, key) pair returns, and only an all-fail raises an error. Engines with no key never enter the call chain.
+1. Expand the card. Engines come in two groups: **"调用顺序" (call order)** holds the engines with a saved key — the ones actually in the chain, numbered `#1`, `#2`, …; **"其他可用引擎 (n)" (other available engines)** holds the ones with no key yet, collapsed by default — click the heading to expand. Each row shows the engine name, a capability chip (`Search · Fetch` or `Search only`), the free tier, and the count of configured keys.
+2. **Click a row** to expand it; an input appears. Paste the API key into it; the in-row "Get API key ↗" link goes straight to each engine's signup page. An engine may carry multiple keys: **one per line**, rotated in order within the engine. Click the row again to collapse it. On save, the row moves up into the call-order group.
+3. **Drag the `⋮⋮` handle on the left of a row** to set the call order: engines higher up are tried first, failing through to the next in order; multiple keys for the same engine are also tried in turn — the first successful (engine, key) pair returns, and only an all-fail raises an error. Engines with no key never enter the call chain and have nothing to order, so only rows in the call-order group are draggable. Note that clicking the row body toggles expand/collapse; to drag, grab the `⋮⋮` handle.
 4. Above the engine list is the **"Enable web_fetch (URL retrieval)"** switch. On, the model gets a `web_fetch` tool that pulls the full text of a given URL; off, that tool is **removed** from the model's catalog (not left in place to fail), leaving search only. Toggling takes effect immediately, with no restart.
-5. Click "Save". Settings persist through the dsh settings namespace (`web-search-free`) and take effect on the next search, with no restart.
+5. Click "Save". Settings persist through the dsh settings namespace (`web-search-free`) and take effect on the next search, with no restart. The card header shows a badge with the count of configured engines, so you can tell at a glance whether the plugin is ready without expanding.
 
 **Configure at least one engine's key**, otherwise search/fetch fails with `No web search providers configured.`
 

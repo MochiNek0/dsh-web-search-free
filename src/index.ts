@@ -21,13 +21,16 @@ export interface Config {
   tavilyApiKey?: string
   firecrawlApiKey?: string
   braveApiKey?: string
+  anysearchApiKey?: string
+  tinyfishApiKey?: string
+  serpapiApiKey?: string
   /**
    * Whether the model gets a `web_fetch` tool at all. Search is always on.
    * Owned by {@link createFetchToolMount}, which mounts and unmounts tool-web
    * to match; this is a tool switch, not just a backend one.
    */
   enableFetch?: boolean
-  providerOrder: ('jina' | 'exa' | 'tavily' | 'firecrawl' | 'brave')[]
+  providerOrder: string[]
 }
 
 export const Config = Schema.object({
@@ -36,9 +39,12 @@ export const Config = Schema.object({
   tavilyApiKey: Schema.string().description('API key(s) for Tavily. One key per line for multi-key rotation.'),
   firecrawlApiKey: Schema.string().description('API key(s) for Firecrawl. One key per line for multi-key rotation.'),
   braveApiKey: Schema.string().description('API key(s) for Brave Search. One key per line for multi-key rotation.'),
+  anysearchApiKey: Schema.string().description('API key(s) for AnySearch. One key per line for multi-key rotation.'),
+  tinyfishApiKey: Schema.string().description('API key(s) for TinyFish. One key per line for multi-key rotation.'),
+  serpapiApiKey: Schema.string().description('API key(s) for SerpApi. One key per line for multi-key rotation.'),
   enableFetch: Schema.boolean().default(true).description('是否为模型挂载 web_fetch（URL 内容抓取）。关闭后该工具会从模型的工具表里移除，只保留搜索；切换即时生效，无需重启。'),
-  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave']))
-    .default(['jina', 'exa', 'tavily', 'firecrawl', 'brave'])
+  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi']))
+    .default(['tinyfish', 'anysearch', 'exa', 'tavily', 'firecrawl', 'brave', 'serpapi', 'jina'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。')
 })
 
