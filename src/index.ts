@@ -1,5 +1,3 @@
-import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import { availableProviders } from './providers/index.js'
@@ -25,9 +23,14 @@ export interface Config {
   tinyfishApiKey?: string
   serpapiApiKey?: string
   /**
-   * Whether the model gets a `web_fetch` tool at all. Search is always on.
-   * Owned by {@link createFetchToolMount}, which mounts and unmounts tool-web
-   * to match; this is a tool switch, not just a backend one.
+   * Whether the model may use `web_fetch` at all. Search is always on.
+   *
+   * Since dsh 0.1.5 the tool itself is mounted by the composition — dsh-base's
+   * `tool-web` row on TUI/headless, per-preset `tool-web` rows on the Web
+   * surface — so this gates the fetch PROVIDER's availability instead of the
+   * tool's registration: off, `web_fetch` stays listed and every call fails
+   * with the seam's structured WEB_PROVIDER_CONFIGURED_UNAVAILABLE error.
+   * Read live at execution time, so the switch needs no restart.
    */
   enableFetch?: boolean
   providerOrder: string[]
@@ -42,7 +45,7 @@ export const Config = Schema.object({
   anysearchApiKey: Schema.string().description('API key(s) for AnySearch. One key per line for multi-key rotation.'),
   tinyfishApiKey: Schema.string().description('API key(s) for TinyFish. One key per line for multi-key rotation.'),
   serpapiApiKey: Schema.string().description('API key(s) for SerpApi. One key per line for multi-key rotation.'),
-  enableFetch: Schema.boolean().default(true).description('是否为模型挂载 web_fetch（URL 内容抓取）。关闭后该工具会从模型的工具表里移除，只保留搜索；切换即时生效，无需重启。'),
+  enableFetch: Schema.boolean().default(true).description('是否允许模型调用 web_fetch（URL 内容抓取）。web_fetch 工具由 dsh 统一挂载，关闭后调用会返回明确的错误提示，而不是从工具表移除；切换即时生效，无需重启。'),
   providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi']))
     .default(['tinyfish', 'anysearch', 'exa', 'tavily', 'firecrawl', 'brave', 'serpapi', 'jina'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。')
@@ -63,97 +66,19 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Load the HOST's own `@deepseek-ai/dsh-tool-web` — not a copy of our own.
+ * NOT mounting `@deepseek-ai/dsh-tool-web` here, deliberately.
  *
- * A bare `import` from this package would fail: the plugin is installed beside
- * the profile (or linked from a checkout), and `@deepseek-ai/dsh-tool-web` is
- * not on its Node resolution chain. It IS resolvable from the profile
- * directory, which is what `ctx.baseUrl` points at, so resolution is anchored
- * there. That also guarantees we mount the very instance the running dsh uses,
- * rather than pulling a second copy with its own `dsh-tools` / `dsh-web`.
- *
- * Returns a plain object rather than the module namespace: the namespace is
- * frozen, and cordis only needs `apply` plus the metadata.
+ * Up to dsh 0.1.2 this plugin mounted tool-web itself to own `web_fetch`'s
+ * registration. Since 0.1.5 the composition mounts it everywhere — dsh-base's
+ * `tool-web` row ships `fetch: true` (TUI/headless) and every shipped agent
+ * preset mounts its own scoped row with `fetch: true` (the Web surface
+ * disables the host row and composes per session) — so a global self-mount
+ * would duplicate-register `web_fetch` against each of them, and a per-agent
+ * scope SHADOWS a global registration, which means an unmount here could no
+ * longer remove what a preset's row registered. The tool belongs to the
+ * composition; this plugin only backs it through the seam, and `enableFetch`
+ * gates the fetch PROVIDER's availability instead of the tool's registration.
  */
-async function loadToolWeb(ctx: Context) {
-  const baseUrl = (ctx as any).baseUrl
-  if (!baseUrl) throw new Error('ctx.baseUrl is unset; cannot anchor tool-web resolution')
-  const entry = createRequire(baseUrl).resolve('@deepseek-ai/dsh-tool-web')
-  const mod: any = await import(pathToFileURL(entry).href)
-  return { name: mod.name, inject: mod.inject, Config: mod.Config, apply: mod.apply }
-}
-
-/**
- * Own the model-facing `web_fetch` tool's lifetime, so the `enableFetch`
- * setting is a real tool switch rather than a backend one.
- *
- * Whether the model SEES `web_fetch` is decided by tool-web's `fetch` config at
- * mount time — "Enablement controls tool registration; an enabled tool remains
- * visible when its provider is unavailable and fails with a structured error at
- * execution time" (dsh-tool-web). A settings flag the seam reads can therefore
- * only make the tool fail, never disappear. Mounting tool-web ourselves as a
- * child fiber does: `ctx.plugin` registers into the global tool layer that every
- * agent scope inherits, and disposing the fiber runs tool-web's own effect-scoped
- * disposers, taking `web_fetch` and its prompt section back out.
- *
- * `search: false` keeps us out of the `web_search` business entirely — whatever
- * the composition already mounts (a preset's scoped row on the Web surface, the
- * host row on TUI/headless) stays the sole owner of that name.
- *
- * Deliberately NOT gated on API keys: a key-less fetch chain still yields a
- * clear WEB_PROVIDER_CONFIGURED_UNAVAILABLE from the seam, and a tool that
- * blinks in and out as keys are edited is worse than one that reports why it
- * cannot run.
- */
-function createFetchToolMount(ctx: Context, logger: any, wanted: () => boolean) {
-  let fiber: { dispose(): Promise<void> | void } | null = null
-  let plugin: Awaited<ReturnType<typeof loadToolWeb>> | null = null
-  // Toggles are serialized: `watch` callbacks and the initial sync can overlap,
-  // and a mount racing an unmount would strand a fiber holding `web_fetch`.
-  let chain: Promise<void> = Promise.resolve()
-
-  const sync = () => {
-    chain = chain.then(async () => {
-      const want = wanted()
-      if (want === (fiber !== null)) return
-
-      if (!want) {
-        const current = fiber
-        fiber = null
-        await current!.dispose()
-        return
-      }
-
-      // No guard against a composition that ALSO mounts tool-web with
-      // `fetch: true` (a user patch, or a profile that never disabled the host
-      // row). A pre-check reads the registry at whatever moment this runs, and
-      // measurement says we usually get there first — the other row then throws
-      // its own duplicate-registration error, which the pre-check cannot
-      // prevent, so it would only buy false confidence. That throw is contained
-      // by cordis (logged against `tool-web`; the tree keeps running and its
-      // `web_search` survives), and `web_fetch` still works — served by us. The
-      // fix for anyone hitting it is to pick one owner, not to make this
-      // defensive.
-      plugin = plugin ?? await loadToolWeb(ctx)
-      fiber = ctx.plugin(plugin as any, { search: false, fetch: true })
-    }).catch((err: any) => {
-      logger.warn?.(`Failed to ${wanted() ? 'mount' : 'unmount'} web_fetch: ${err?.message}. Web search is unaffected.`)
-    })
-  }
-
-  // Our own disposal tears the child down with us; this only covers the
-  // toggled-off path so a dispose mid-flight cannot outrun the chain.
-  ctx.effect(() => () => {
-    chain = chain.then(async () => {
-      const current = fiber
-      fiber = null
-      await current?.dispose()
-    })
-  })
-
-  return sync
-}
-
 export function apply(ctx: Context, config: Config) {
   const logger = ctx.logger?.('web-search-free') || console
 
@@ -163,23 +88,13 @@ export function apply(ctx: Context, config: Config) {
   // in the UI reaches the next search without a restart.
   let resolved: () => Config = () => config
 
-  // Owns `web_fetch`'s registration; re-read after every settings commit so the
-  // toggle takes effect without a restart.
-  const syncFetchTool = createFetchToolMount(ctx, logger, () => resolved().enableFetch !== false)
-
   ctx.inject(['settings'], (sctx) => {
     const scope = sctx.settings.register(SETTINGS_NAMESPACE, Config, { base: config })
     resolved = () => scope.get()
-    syncFetchTool()
-    sctx.effect(() => scope.watch(() => syncFetchTool()))
     sctx.effect(() => () => {
       resolved = () => config
-      syncFetchTool()
     })
   })
-
-  // Composition-only value until (and unless) a settings service shows up.
-  syncFetchTool()
 
   const getActiveProviders = (capability?: 'search' | 'fetch') => {
     const current = resolved()
@@ -211,7 +126,12 @@ export function apply(ctx: Context, config: Config) {
     return activeProviders
   }
 
-  ctx.web?.registerSearchProvider({
+  // Register into the seam. dsh-web's register* returns a disposer; wiring it
+  // as an effect means disabling or HMR-reloading this plugin removes its
+  // providers instead of tripping WEB_DUPLICATE_PROVIDER on the next apply.
+  // The seam reads `available()` at execution time, so every setting below is
+  // honored live — no watch/re-sync wiring is needed.
+  ctx.effect(() => ctx.web?.registerSearchProvider({
     id: 'web-search-free',
     available: () => getActiveProviders('search').length > 0,
     async search(request: any, signal: any) {
@@ -241,13 +161,14 @@ export function apply(ctx: Context, config: Config) {
       }
       throw new Error(`All configured search providers failed. Last error: ${lastError?.message}`)
     }
-  })
+  }))
 
-  ctx.web?.registerFetchProvider({
+  ctx.effect(() => ctx.web?.registerFetchProvider({
     id: 'web-search-free',
-    // `enableFetch` is checked here too, not just at the mount: the tool and the
-    // provider are separate registrations, and a composition that mounts
-    // `web_fetch` some other way must not reach a backend the user switched off.
+    // The single `enableFetch` switch, read at execution time: the tool itself
+    // is mounted by the composition and stays registered, so "off" means the
+    // seam answers WEB_PROVIDER_CONFIGURED_UNAVAILABLE — a structured error
+    // naming this provider — rather than the tool vanishing from the model.
     available: () => resolved().enableFetch !== false && getActiveProviders('fetch').length > 0,
     async fetch(request: any, signal: any) {
       const activeProviders = getActiveProviders('fetch')
@@ -283,5 +204,5 @@ export function apply(ctx: Context, config: Config) {
       }
       throw new Error(`All configured fetch providers failed. Last error: ${lastError?.message}`)
     }
-  })
+  }))
 }

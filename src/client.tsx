@@ -116,7 +116,7 @@ const zh = {
   "fetch.on":
     "已开启：模型可调用 web_fetch，由上面填了 Key 的引擎按顺序抓取 URL 全文。",
   "fetch.off":
-    "已关闭：web_fetch 工具会从模型的工具表里移除，只保留搜索。切换即时生效，无需重启。",
+    "已关闭：模型调用 web_fetch 时会收到明确的错误提示（web_fetch 由 dsh 统一挂载，不再从工具表移除）。切换即时生效，无需重启。",
   "caps.searchFetch": "搜索 · 抓取",
   "caps.searchOnly": "仅搜索",
   "row.rotating": "{count} 个 Key · 按顺序轮换",
@@ -173,7 +173,7 @@ const en: Record<keyof typeof zh, string> = {
   "fetch.on":
     "On: the model can call web_fetch, and the keyed engines above fetch full page text in order.",
   "fetch.off":
-    "Off: web_fetch is removed from the model’s tool list, leaving search only. Takes effect immediately, no restart.",
+    "Off: calling web_fetch returns a clear error instead of fetching (the tool stays mounted by dsh). Takes effect immediately, no restart.",
   "caps.searchFetch": "Search · Fetch",
   "caps.searchOnly": "Search only",
   "row.rotating": "{count} key(s) · rotated in order",

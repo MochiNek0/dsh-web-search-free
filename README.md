@@ -9,7 +9,7 @@
 - 注册为 dsh 的 `web` 能力通道（同时提供 `searchProvider` 与 `fetchProvider`，id 均为 `web-search-free`）。
 - 自带一个 Web 设置卡片（设置 → 插件 → **免费 Web 搜索**，英文界面下为 **Web Search Free**），可拖动排序、逐个填 Key；卡片文案跟随 dsh 的语言设置在中英之间切换。
 - 作为 dsh bundle 层安装：装上即接管 web 搜索/抓取，卸载（并重启 dsh）后回落到默认通道，无需手改 profile。
-- 可在卡片里开关模型侧的 `web_fetch` 工具——开关即挂载/卸载该工具，不是留着它报错。
+- 可在卡片里开关 `web_fetch`（URL 抓取）——关闭后模型每次调用都会收到明确的"后端已停用"错误，而不是继续抓取。
 
 ## 为什么是 free 的：与官方通道的计费差异
 
@@ -59,6 +59,7 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 
 ## 前置条件
 
+- **dsh ≥ 0.1.2-rc.1**。从这个版本起，宿主组合（dsh-base 的 `tool-web` 行与各 agent preset）统一挂载 `web_search`/`web_fetch` 并经 `@deepseek-ai/dsh-web` seam 取数，本插件只向 seam 注册 provider。更早的版本（≤ 0.1.2-alpha.5）里组合不挂载 web 工具，装本插件后**搜索可用，但 `web_fetch` 不会出现**（那类组合请用 1.3.0，它自行挂载 tool-web）。
 - 已安装 dsh，且 `dsh` 命令可用（在 dsh 源码检出里开发时用 `pnpm dsh ...` 代替）。
 - `pnpm` 在 `PATH` 上（`dsh plugin` 通过 pnpm 在 profile 目录里管理依赖）。
 - 目标 profile 一般是 `web`（本插件的客户端半边声明 `platform: web`，设置卡片只在 Web 界面出现）。`web` profile 首次使用时会从模板自动初始化。
@@ -105,17 +106,17 @@ dsh web          # 等价于 dsh --profile web
 1. 点开卡片，引擎分成两组：**「调用顺序」**里是已存过 Key、真正参与调用的引擎（带 `#1`、`#2` 序号）；**「其他可用引擎 (n)」**里是还没填 Key 的，默认折叠，点标题展开。每一行显示引擎名、能力徽章（`搜索 · 抓取` 或 `仅搜索`）、免费额度，以及已配置的 Key 数量。
 2. **点击某一行**展开它，会出现输入框；在输入框粘贴 API Key，点行内「获取 API Key ↗」可直达各引擎的申请页。每个引擎支持填多个 Key：**每行一个**，引擎内会按行顺序轮换。再点一次行可收起。保存后该行会自动移进「调用顺序」组。
 3. **拖动行左侧的 `⋮⋮` 手柄**调整调用顺序：排在前面的引擎优先调用，失败则按顺序 fallback；同一引擎的多个 Key 也会逐个尝试，任一 (引擎, Key) 成功即返回，全部失败才报错。未填 Key 的引擎不进入调用链，也没有排序的必要，所以只有「调用顺序」组里的行可拖。注意点行体会触发展开/收起，要拖动请抓 `⋮⋮`。
-4. 引擎列表上方有 **「启用 web_fetch（URL 抓取）」** 开关。开启时模型多一个 `web_fetch` 工具，可以对指定 URL 取全文；关闭时该工具会从模型的工具表里**移除**（不是留着报错），只保留搜索。切换即时生效，无需重启。
+4. 引擎列表上方有 **「启用 web_fetch（URL 抓取）」** 开关。开启时模型可对指定 URL 调用 `web_fetch` 取全文；关闭后每次调用会收到明确的错误提示（`web_fetch` 工具由 dsh 统一挂载，开关控制的是本插件的抓取后端，不再从工具表移除工具）。切换即时生效，无需重启。
 5. 点「保存」。配置通过 dsh 的设置命名空间（`web-search-free`）持久化，下一次搜索即时生效，无需重启。卡片头部会显示已配置的引擎数量徽章，不用展开就能看出插件是否就绪。
 
 **至少配置一个引擎的 Key**，否则搜索/抓取会以 `No web search providers configured.` 报错。
 
-> 关于 `web_fetch`：dsh 官方组合默认把它关掉（模型自选请求目标，抓取 provider 不做 SSRF 防护）。本插件把这个选择交给你，默认开启。若你在意出网面，关掉即可——代价是模型无法读取你贴给它的 URL，也无法精读长文档，只能靠搜索摘要。
+> 关于 `web_fetch`：dsh 0.1.5 起官方组合默认启用它（TUI/headless 由 dsh-base 的 `tool-web` 行挂载，Web 界面由各 agent preset 的行挂载），工具始终在模型工具表里。本插件把"抓取走哪个后端"接了过来，并提供一个开关：关闭后调用会收到明确的错误提示。若你在意出网面，关掉即可——代价是模型无法读取你贴给它的 URL，也无法精读长文档，只能靠搜索摘要。
 
 ## 验证
 
 1. `dsh web` 启动 Web 界面。
-2. 在对话里让模型用 Web 搜索/抓取（例如「搜一下今天的新闻」或「抓取 https://example.com 的内容」）。抓取需要卡片里的 **「启用 web_fetch」** 处于开启状态，否则模型的工具表里没有这个工具。
+2. 在对话里让模型用 Web 搜索/抓取（例如「搜一下今天的新闻」或「抓取 https://example.com 的内容」）。抓取需要卡片里的 **「启用 web_fetch」** 处于开启状态，否则模型调用 `web_fetch` 会收到"后端已停用"的错误提示。
 3. 请求会经 `web-search-free` 通道按你排定的引擎顺序执行；某个引擎失败时会在日志里看到 `Provider <name> ... failed. Trying next provider ...`，随后自动尝试下一个。
 
 ## 更新
@@ -152,9 +153,9 @@ dsh plugin --profile web remove dsh-web-search-free
 
 宿主半边（`src/index.ts`，`inject: ['web']`）向 `ctx.web` 注册搜索与抓取 provider，内部按 `providerOrder` 顺序遍历「已配 Key」的引擎做 fallback；每个引擎的 Key 字段可填多个（每行一个），引擎内也会按行顺序逐个轮换。客户端半边（`src/client.tsx`）在「插件」设置页注册一张 React 卡片，读写同一命名空间 `web-search-free` 的设置。两层靠这个命名空间字符串对齐。
 
-`web_fetch` 的挂载由插件自己负责，而不是靠 bundle patch。原因是 tool-web 的**工具可见性在挂载时就定了**——它的文档写明「Enablement controls tool registration; an enabled tool remains visible when its provider is unavailable」，所以一个只被能力通道读取的开关只能让 `web_fetch` 报错、不能让它消失。而 bundle patch 层只在启动时读一次、不热更。因此宿主半边用 `createRequire(ctx.baseUrl)` 从 profile 目录解析出**运行中 dsh 自己那一份** `@deepseek-ai/dsh-tool-web`，以 `{ search: false, fetch: true }` 挂成子 fiber：`ctx.plugin` 注册进所有 agent 作用域都继承的全局工具层，dispose 时 tool-web 自身的 effect 会把 `web_fetch` 和它的 prompt section 一并撤掉。`search: false` 是为了不去碰 `web_search` 这个名字——组合里已有的所有者（Web 界面上是 agent preset 的作用域行）保持唯一。
+`web_fetch` 工具本身的挂载归组合层所有（dsh ≥ 0.1.5）：TUI/headless 下由 `dsh-base` 的 `tool-web` 行挂载（`fetch: true`），Web 界面上由每条 agent preset 各自挂载同名的 `tool-web` 行。preset 文件由 dsh-agent-presets 从自己的根目录加载、不属于 profile patch 栈，bundle patch 够不到——也不需要：所有这些行都通过同一条能力通道（seam）取数，上面那条 `web` 覆盖层已把通道指向本插件。因此本插件**不**自行挂载 `dsh-tool-web`（0.1.2 时代的做法）：per-agent 作用域的注册会遮蔽全局注册，自挂载只会和 preset 行重复注册 `web_fetch`，卸载自己的 fiber 也动不到 preset 那份。
 
-解析或挂载失败一律降级为一条 warn，不抛出、不产生 unhandled rejection，搜索链路不受影响。
+`enableFetch` 开关据此实现为**抓取 provider 的可用性**：seam 在每次执行时读取 `available()`，关闭后 `web_fetch` 仍在工具表里，但每次调用都返回结构化的 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` 错误（dsh 官方语义）。切换即时生效，无需 watch/重挂载接线。两个 provider 的注册接在 `ctx.effect` 上：dsh-web 的 `register*` 返回注销函数，插件被禁用或热重载时会把自己的 provider 从 seam 摘除，避免下次 apply 撞上 `WEB_DUPLICATE_PROVIDER`。
 
 构建分两步（包声明 `"type": "module"`）：`tsconfig.json`（`module: NodeNext`）把宿主半边编成 ESM 产物（`dist/index.js` 等，与 dsh 运行时同为 ESM，避免 CJS `require()` 一个 ESM 依赖时触发的加载竞态）；`tsconfig.client.json`（`module: CommonJS`）单独编出 `dist/client.js`，再由 `wrap-client.cjs` 包成 `window.__ModuleLoader__.load(...)`，使其能被 dsh 的浏览器侧模块加载器加载。宿主半边从 `@deepseek-ai/schemastery` 取 `Schema`（而非旧版 `cordis`），`Context` 仅作类型从 `@deepseek-ai/cordis` 引入。
 
