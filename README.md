@@ -43,8 +43,8 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 | Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                       |
 | Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                         |
 | Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                      |
-| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register> |
 | Serping API    |  ✓   |  ✗   |   部分   | 1,000 次/月（每月重置，无需绑卡）                  | <https://serpingapi.com/signup>                   |
+| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register> |
 | SerpApi        |  ✓   |  ✗   |   弱\*   | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>               |
 | Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                         |
 

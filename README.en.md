@@ -43,8 +43,8 @@ That's the core reason the plugin is named "free" — the official channel burns
 | Exa (Metaphor) |   ✓    |   ✓   |     some     | $20 on signup + $10/month credit (cumulative, no monthly reset) | <https://dashboard.exa.ai/> |
 | Tavily         |   ✓    |   ✓   |      ✗       | 1,000 credits/month (monthly reset) | <https://app.tavily.com/>                        |
 | Firecrawl      |   ✓    |   ✓   |      ✗       | 1,000 credits/month (search costs 2 credits/10 results) | <https://www.firecrawl.dev/>          |
-| Brave Search   |   ✓    |   ✗   |   **most**   | $5 credit/month (card required, not charged) | <https://api-dashboard.search.brave.com/register> |
 | Serping API    |   ✓    |   ✗   |     some     | 1,000/month (monthly reset, no card) | <https://serpingapi.com/signup>                  |
+| Brave Search   |   ✓    |   ✗   |   **most**   | $5 credit/month (card required, not charged) | <https://api-dashboard.search.brave.com/register> |
 | SerpApi        |   ✓    |   ✗   |     weak     | 250/month (monthly reset)           | <https://serpapi.com/users/sign_up>              |
 | Jina AI        |   ✓    |   ✓   |     some     | New key gets 10M tokens (one-time, until exhausted) | <https://jina.ai/api-key>                |
 
