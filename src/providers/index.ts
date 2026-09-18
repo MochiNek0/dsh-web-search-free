@@ -7,6 +7,7 @@ import { braveProvider } from './brave.js';
 import { anysearchProvider } from './anysearch.js';
 import { tinyfishProvider } from './tinyfish.js';
 import { serpapiProvider } from './serpapi.js';
+import { serpingapiProvider } from './serpingapi.js';
 
 // 注册所有可用的 Providers
 export const availableProviders: Record<string, WebSearchProvider> = {
@@ -18,4 +19,5 @@ export const availableProviders: Record<string, WebSearchProvider> = {
   anysearch: anysearchProvider,
   tinyfish: tinyfishProvider,
   serpapi: serpapiProvider,
+  serpingapi: serpingapiProvider,
 };
