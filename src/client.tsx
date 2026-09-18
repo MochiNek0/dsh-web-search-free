@@ -15,7 +15,7 @@ const NAMESPACE = "web-search-free";
  * terse — it's a one-line badge, not a pricing table.
  *
  * `caps.search` / `caps.fetch` drive the small capability chips on each row:
- * a search-only engine (Brave, SerpApi) shows just "搜索", one that also
+ * a search-only engine (Brave, Serping API, SerpApi) shows just "搜索", one that also
  * fetches shows "搜索 · 抓取". This mirrors `supportsFetch` on the host side.
  */
 type ProviderMeta = {
@@ -67,6 +67,13 @@ const PROVIDERS: ProviderMeta[] = [
     field: "braveApiKey",
     label: "Brave Search",
     signup: "https://api-dashboard.search.brave.com/register",
+    caps: { search: true },
+  },
+  {
+    key: "serpingapi",
+    field: "serpingapiApiKey",
+    label: "Serping API",
+    signup: "https://serpingapi.com/signup",
     caps: { search: true },
   },
   {
@@ -159,6 +166,7 @@ const zh = {
   "free.tavily": "1000 credits/月",
   "free.firecrawl": "1000 credits/月",
   "free.brave": "$5 额度/月（需绑卡）",
+  "free.serpingapi": "1000 次/月（无需绑卡）",
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
 };
@@ -212,6 +220,7 @@ const en: Record<keyof typeof zh, string> = {
   "free.tavily": "1000 credits/month",
   "free.firecrawl": "1000 credits/month",
   "free.brave": "$5 credit/month (card required)",
+  "free.serpingapi": "1000 calls/month (no card)",
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
 };
@@ -297,6 +306,7 @@ type Snapshot = {
     anysearchApiKey?: string;
     tinyfishApiKey?: string;
     serpapiApiKey?: string;
+    serpingapiApiKey?: string;
     enableFetch?: boolean;
     providerOrder?: string[];
   };

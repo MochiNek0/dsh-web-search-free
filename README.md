@@ -44,16 +44,17 @@ dsh 默认的官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search
 | Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                         |
 | Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                      |
 | Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register> |
+| Serping API    |  ✓   |  ✗   |   部分   | 1,000 次/月（每月重置，无需绑卡）                  | <https://serpingapi.com/signup>                   |
 | SerpApi        |  ✓   |  ✗   |   弱\*   | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>               |
 | Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                         |
 
 > 表格顺序即默认调用顺序（按可持续免费量从大到小排）。Jina 虽是一次性额度，但仍会进入抓取链——只要填了 Key，`supportsFetch` 为真的引擎都会被 `getActiveProviders('fetch')` 选中，与它在搜索链里的位置无关。
 
-> **关于额度的几种机制**：Jina 是**一次性 token**（新 key 送 10M，搜索 `s.jina.ai` 每次固定扣 1 万 token，约够 1,000 次搜索，用完只能充值或换 key，不重置）；Exa 是**可累积 credit**（注册送 $20 + 每月补 $10，余额不清零、不重置，约能跑 1,400 次基础搜索）；AnySearch 是**每日重置**（1,000 次/天，约 3 万次/月）；Tavily / Firecrawl / SerpApi 是**每月重置**；Brave 也是每月 $5 credit 重置；TinyFish 的搜索/抓取则完全免费，只卡速率（免费层 Search 30 req/min、Fetch 150 url/min）。
+> **关于额度的几种机制**：Jina 是**一次性 token**（新 key 送 10M，搜索 `s.jina.ai` 每次固定扣 1 万 token，约够 1,000 次搜索，用完只能充值或换 key，不重置）；Exa 是**可累积 credit**（注册送 $20 + 每月补 $10，余额不清零、不重置，约能跑 1,400 次基础搜索）；AnySearch 是**每日重置**（1,000 次/天，约 3 万次/月）；Tavily / Firecrawl / Serping API / SerpApi 是**每月重置**；Brave 也是每月 $5 credit 重置；TinyFish 的搜索/抓取则完全免费，只卡速率（免费层 Search 30 req/min、Fetch 150 url/min）。
 
-**关于抓取**：Brave Search 和 SerpApi 都是纯 SERP，没有 URL 抓取端点，所以它们**不会进入抓取链**（只在搜索链里）。如果只配了这两家的 Key，抓取链为空、会以 `No web fetch providers configured.` 报错——请再给一个支持抓取的引擎配上 Key。
+**关于抓取**：Brave Search、Serping API 和 SerpApi 都是纯 SERP，没有 URL 抓取端点，所以它们**不会进入抓取链**（只在搜索链里）。如果只配了这几家的 Key，抓取链为空、会以 `No web fetch providers configured.` 报错——请再给一个支持抓取的引擎配上 Key。
 
-**关于结果日期**：`publishedAt` 决定模型能否判断一条结果的时效性，各引擎差别很大（下面是单次查询的实测覆盖率，仅供参考）：Brave `page_age` 18/20、Exa `publishedDate` 4/10、Jina `publishedTime` 1~3/10、TinyFish `date`（新闻结果较全、网页结果部分）、SerpApi `date`（弱，显示串）；Tavily 的 `published_date` **仅在 `topic: 'news'` 下返回**，本插件走通用网页搜索，因此实际为空；Firecrawl 和 AnySearch 的搜索结果没有日期字段。
+**关于结果日期**：`publishedAt` 决定模型能否判断一条结果的时效性，各引擎差别很大（下面是单次查询的实测覆盖率，仅供参考）：Brave `page_age` 18/20、Exa `publishedDate` 4/10、Jina `publishedTime` 1~3/10、TinyFish `date`（新闻结果较全、网页结果部分）、Serping API `date`（部分结果带，显示串）、SerpApi `date`（弱，显示串）；Tavily 的 `published_date` **仅在 `topic: 'news'` 下返回**，本插件走通用网页搜索，因此实际为空；Firecrawl 和 AnySearch 的搜索结果没有日期字段。
 
 > 如果时效性判断对你重要，可以把 Brave 往调用顺序前面挪——代价是丢掉 Tavily 的直接回答段和较长的摘录。
 
