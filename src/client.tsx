@@ -687,6 +687,7 @@ function WebSearchFreeCard({
               width: 36,
               height: 20,
               borderRadius: 999,
+              ...roundCorners,
               border: "none",
               cursor: disabled ? "default" : "pointer",
               padding: 0,
@@ -705,6 +706,7 @@ function WebSearchFreeCard({
               width: 16,
               height: 16,
               borderRadius: "50%",
+              ...roundCorners,
               background: "#fff",
               transition: "left .16s",
               boxShadow: "0 1px 3px rgba(0,0,0,.2)",
@@ -840,6 +842,7 @@ function WebSearchFreeCard({
                   style: {
                     whiteSpace: "nowrap",
                     borderRadius: 999,
+                    ...roundCorners,
                     padding: "1px 8px",
                     fontSize: 11,
                     fontWeight: 500,
@@ -1277,6 +1280,7 @@ function WebSearchFreeCard({
                     background: "var(--dsw-alias-bg-module-platform)",
                     color: "var(--dsw-alias-label-secondary)",
                     borderRadius: 999,
+                    ...roundCorners,
                     padding: "1px 8px",
                     fontSize: 11,
                     fontWeight: 500,
@@ -1295,6 +1299,7 @@ function WebSearchFreeCard({
                     background: "var(--dsw-alias-brand-primary)",
                     color: "#fff",
                     borderRadius: 999,
+                    ...roundCorners,
                     padding: "1px 8px",
                     fontSize: 11,
                     fontWeight: 500,
@@ -1359,6 +1364,14 @@ function WebSearchFreeCard({
       : null,
   );
 }
+
+/**
+ * dsh's theme applies `corner-shape: superellipse(1.5)` to `*`, so a
+ * `border-radius` of 999px renders as a squircle instead of a pill, and 50% as
+ * a squircle instead of a circle. Anything in this card that must be a TRUE
+ * pill or circle opts back out, exactly as dsh's own pills do.
+ */
+const roundCorners = { cornerShape: "round" } as React.CSSProperties;
 
 const inputStyle = {
   height: 34,
