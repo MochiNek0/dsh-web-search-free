@@ -1,11 +1,18 @@
 import * as React from "react";
 
 /**
- * Must equal the namespace the Host half registers: the Plugins settings tab
- * dispatches `settings.plugin.item` once per served namespace, using it as the
- * keyed slot's entry key.
+ * Must equal the namespace the Host half registers. Up to dsh 0.1.5 the Plugins
+ * settings tab dispatched `settings.plugin.item` once per served namespace,
+ * using it as the keyed slot's entry key.
  */
 const NAMESPACE = "web-search-free";
+
+/**
+ * This package's npm name. Since dsh 0.1.6 the sidebar Plugins page keys
+ * `plugins.bundle.config` on the BUNDLE's package name — not on the settings
+ * namespace — so the two strings are both needed and must not be conflated.
+ */
+const PACKAGE_NAME = "dsh-web-search-free";
 
 /**
  * All backends the host half knows about; the order here is the default fallback.
@@ -274,6 +281,45 @@ const translate =
     );
   };
 
+/**
+ * Every slot this card knows how to live in, most preferred first.
+ *
+ * dsh moves this seat between releases (0.1.5 dispatched `settings.plugin.item`
+ * from the Settings → Plugins tab; 0.1.6 deleted that tab and moved plugin
+ * configuration to the sidebar Plugins page), so one hard-coded name makes the
+ * card invisible on every version but the one it was built against.
+ *
+ * `ctx.slots.inject(name, cb)` is what makes a list workable: it WAITS for a
+ * declaration instead of throwing, so naming a slot the host has never heard of
+ * costs nothing. Only `slots.register()` into an undeclared slot throws — which
+ * is why the registration below happens inside the injection callback, never at
+ * apply time.
+ *
+ * `plugins.item` is deliberately NOT a candidate: its contract reserves it for
+ * the host-plane pages `ui-settings-plugins` ships ("a bundle's configuration
+ * belongs in `plugins.bundle.config` or `plugins.row.config` instead"), and a
+ * bundle registering there gets a card in the Official group ON TOP of the page
+ * its own bundle already has — two configuration pages for one plugin.
+ */
+const SLOT_CANDIDATES: { name: string; options: Record<string, unknown> }[] = [
+  // dsh >= 0.1.6: the bundle's own configuration, rendered on the bundle's page
+  // between its description and its rows. Keyed by package name; the page asks
+  // for `view: 'page'` only, and draws the title, icon and crumb itself.
+  { name: "plugins.bundle.config", options: { key: PACKAGE_NAME } },
+  // dsh <= 0.1.5: one card per served settings namespace in Settings → Plugins.
+  // No `view` prop there, so the card falls back to its own collapsible header.
+  { name: "settings.plugin.item", options: { key: NAMESPACE } },
+];
+
+/** Flatten the live declaration tree into the slot names it contains. */
+const declaredSlotNames = (nodes: any[], into: string[] = []): string[] => {
+  for (const node of nodes || []) {
+    if (node?.name) into.push(node.name);
+    declaredSlotNames(node?.children ?? [], into);
+  }
+  return into;
+};
+
 // `settingsScope.bind` reads `connection` and `remote` off the CALLING context,
 // so both must be declared here alongside the services this plugin uses itself.
 export const inject = ["slots", "settingsScope", "connection", "remote"];
@@ -281,18 +327,59 @@ export const inject = ["slots", "settingsScope", "connection", "remote"];
 export function apply(ctx: any) {
   const scope = ctx.settingsScope.bind({ namespace: NAMESPACE });
 
-  ctx.slots.inject("settings.plugin.item", () =>
-    ctx.slots.register(
-      {
-        name: "settings.plugin.item",
-        key: NAMESPACE,
-        // `reflect.get` is the read that does not require an `inject` entry: it
-        // returns undefined rather than throwing when no locale plugin is loaded.
-        inject: () => ({ scope, locale: ctx.reflect.get("locale") }),
-      },
-      WebSearchFreeCard,
-    ),
-  );
+  // Which candidates the host currently declares, and which one is mounted.
+  // A host that declares two of them at once (an overlap release) must still
+  // show exactly one card, so the arbiter always keeps the best one alone.
+  const declared = new Set<string>();
+  let mounted: { name: string; dispose: () => void } | null = null;
+
+  const reconcile = () => {
+    const best = SLOT_CANDIDATES.find((slot) => declared.has(slot.name));
+    if (mounted?.name === best?.name) return;
+    mounted?.dispose();
+    mounted = null;
+    if (!best) return;
+    mounted = {
+      name: best.name,
+      dispose: ctx.slots.register(
+        {
+          ...best.options,
+          name: best.name,
+          // `reflect.get` is the read that does not require an `inject` entry: it
+          // returns undefined rather than throwing when no locale plugin is loaded.
+          inject: () => ({ scope, locale: ctx.reflect.get("locale") }),
+        },
+        WebSearchFreeCard,
+      ),
+    };
+  };
+
+  for (const slot of SLOT_CANDIDATES) {
+    ctx.slots.inject(slot.name, () => {
+      declared.add(slot.name);
+      reconcile();
+      return () => {
+        declared.delete(slot.name);
+        reconcile();
+      };
+    });
+  }
+
+  // A dsh that renamed the seat again leaves the card silently invisible, which
+  // reads as "the plugin is broken". Say so once, with the slot names this dsh
+  // actually declares, so the next rename is a one-line bug report.
+  const timer = setTimeout(() => {
+    if (mounted) return;
+    const names = declaredSlotNames(ctx.slots.snapshot?.() ?? [])
+      .filter((name) => name.includes("plugin"))
+      .sort();
+    console.warn(
+      `[${NAMESPACE}] no settings card mounted: this dsh declares none of ${SLOT_CANDIDATES.map((s) => s.name).join(", ")}.` +
+        ` Plugin-related slots it does declare: ${names.join(", ") || "(none)"}.` +
+        ` Keys can still be set in the profile's cordis.patch.yml; please report this list at https://github.com/MochiNek0/dsh-web-search-free/issues`,
+    );
+  }, 5000);
+  ctx.effect(() => () => clearTimeout(timer));
 }
 
 type Snapshot = {
@@ -336,7 +423,21 @@ const isConfigured = (
   return typeof stored === "string" && parseKeys(stored).length > 0;
 };
 
-function WebSearchFreeCard({ scope, locale }: { scope: any; locale?: any }) {
+/**
+ * `view` is the owner share of the dsh >= 0.1.6 configuration slots: `'page'`
+ * means the Plugins page already drew the title, icon and crumb and wants the
+ * form alone. It is absent on the dsh <= 0.1.5 seat, where the card owns its
+ * whole chrome — so undefined keeps the original collapsible card.
+ */
+function WebSearchFreeCard({
+  scope,
+  locale,
+  view,
+}: {
+  scope: any;
+  locale?: any;
+  view?: "summary" | "page";
+}) {
   const snapshot: Snapshot = React.useSyncExternalStore(
     React.useCallback(
       (listener: () => void) => scope.subscribe(listener),
@@ -1089,6 +1190,24 @@ function WebSearchFreeCard({ scope, locale }: { scope: any; locale?: any }) {
     configuredCount > 0
       ? t("summary.configured", { count: configuredCount })
       : t("summary.none");
+
+  // The one-liner the Plugins page places under the title it drew itself.
+  if (view === "summary") return text(t("header.subtitle", { summary }));
+
+  // The page view: the surrounding page owns title, icon and crumb, so the
+  // card contributes only its form — no card shell, no disclosure of its own.
+  if (view === "page")
+    return React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        },
+      },
+      ...cardBody(),
+    );
 
   return React.createElement(
     "li",

@@ -7,9 +7,11 @@ export const name = 'web-search-free'
 export const inject = ['web']
 
 /**
- * Settings namespace this plugin owns. The browser card in `./client` is keyed
- * on this string: the Plugins settings tab dispatches `settings.plugin.item`
- * per namespace the Host serves, so the two halves must spell it identically.
+ * Settings namespace this plugin owns. The browser card in `./client` binds its
+ * settings scope to this string, so the two halves must spell it identically.
+ * (Which SLOT that card occupies is a separate, dsh-version-dependent matter —
+ * see `SLOT_CANDIDATES` there; only on dsh <= 0.1.5 was the slot key this
+ * namespace.)
  */
 export const SETTINGS_NAMESPACE = 'web-search-free'
 

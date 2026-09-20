@@ -7,7 +7,7 @@
 它把 dsh 默认的 `deepseek-official` 搜索/抓取通道，替换成一个**多引擎 + 自动 fallback** 的通道：你填入哪些引擎的 API Key，它就按你排定的顺序依次尝试，前一个失败（或额度耗尽）会自动落到下一个；同一引擎也可以填多个 Key（每行一个），引擎内 Key 同样按顺序轮换。所有检索请求都由 dsh 的**宿主进程（Node）**直接发往各引擎，不经过官方搜索后端、也不经过任何 LLM；浏览器侧只有那张设置卡片，不发任何网络请求。
 
 - 注册为 dsh 的 `web` 能力通道（同时提供 `searchProvider` 与 `fetchProvider`，id 均为 `web-search-free`）。
-- 自带一个 Web 设置卡片（设置 → 插件 → **免费 Web 搜索**，英文界面下为 **Web Search Free**），可拖动排序、逐个填 Key；卡片文案跟随 dsh 的语言设置在中英之间切换。
+- 自带一个 Web 配置卡片（dsh ≥ 0.1.6 在侧栏 **插件** 页本包自己的页面上；≤ 0.1.5 在 **设置 → 插件**），可拖动排序、逐个填 Key；卡片文案跟随 dsh 的语言设置在中英之间切换。找不到卡片时见[直接写 profile patch](#找不到配置卡片时直接写-profile-patch)。
 - 作为 dsh bundle 层安装：装上即接管 web 搜索/抓取，卸载（并重启 dsh）后回落到默认通道，无需手改 profile。
 - 可在卡片里开关 `web_fetch`（URL 抓取）——关闭后模型每次调用都会收到明确的"后端已停用"错误，而不是继续抓取。
 
@@ -102,7 +102,14 @@ dsh plugin --profile web add .
 dsh web          # 等价于 dsh --profile web
 ```
 
-打开 **设置 → 插件 → 免费网页搜索**（英文界面下为 **Web Search Free**）卡片：
+先找到配置卡片 —— 它的位置由 dsh 版本决定，插件会自动落到当前版本存在的那个位置：
+
+| dsh 版本 | 卡片位置 |
+| --- | --- |
+| ≥ 0.1.6 | 侧栏 **插件** → 「已安装」里的 **web-search-free**，表单在包说明与「包含的组件」之间 |
+| ≤ 0.1.5 | **设置 → 插件 → 插件配置 → 免费网页搜索**（英文界面下为 **Web Search Free**） |
+
+然后：
 
 1. 点开卡片，引擎分成两组：**「调用顺序」**里是已存过 Key、真正参与调用的引擎（带 `#1`、`#2` 序号）；**「其他可用引擎 (n)」**里是还没填 Key 的，默认折叠，点标题展开。每一行显示引擎名、能力徽章（`搜索 · 抓取` 或 `仅搜索`）、免费额度，以及已配置的 Key 数量。
 2. **点击某一行**展开它，会出现输入框；在输入框粘贴 API Key，点行内「获取 API Key ↗」可直达各引擎的申请页。每个引擎支持填多个 Key：**每行一个**，引擎内会按行顺序轮换。再点一次行可收起。保存后该行会自动移进「调用顺序」组。
@@ -111,6 +118,27 @@ dsh web          # 等价于 dsh --profile web
 5. 点「保存」。配置通过 dsh 的设置命名空间（`web-search-free`）持久化，下一次搜索即时生效，无需重启。卡片头部会显示已配置的引擎数量徽章，不用展开就能看出插件是否就绪。
 
 **至少配置一个引擎的 Key**，否则搜索/抓取会以 `No web search providers configured.` 报错。
+
+### 找不到配置卡片时：直接写 profile patch
+
+dsh 的插件配置界面还在快速演进，配置卡片所在的插槽名换过不止一次。插件同时认识历史上出现过的几个插槽，但如果你的 dsh 版本比本插件更新、插槽又改名了，卡片就会不出现（浏览器控制台里会打印一行 `[web-search-free] no settings card mounted: …`，附上这版 dsh 实际声明的插槽名——欢迎把这行贴到 issue 里）。
+
+这种情况下不用等新版本：**所有配置都可以直接写进 profile 的 `~/.dsh/profiles/web/cordis.patch.yml`**，这条路径不依赖任何界面。
+
+插件装上时已经由它自己的 bundle 层插入了 `web-search-free` 这一行，所以这里写的是**按 id 覆盖它的 config**（不要再写一遍 `insert`，那会插出重复的行）：
+
+```yaml
+- id: web-search-free
+  config:
+    tavilyApiKey: tvly-xxxxxxxx
+    exaApiKey: |-
+      key-1
+      key-2
+    enableFetch: true
+    providerOrder: [tavily, exa, tinyfish]
+```
+
+字段名与卡片里的一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`。写完重启 dsh 生效。卡片里保存的值属于用户层，会覆盖这里的 base 值。
 
 > 关于 `web_fetch`：dsh 0.1.5 起官方组合默认启用它（TUI/headless 由 dsh-base 的 `tool-web` 行挂载，Web 界面由各 agent preset 的行挂载），工具始终在模型工具表里。本插件把"抓取走哪个后端"接了过来，并提供一个开关：关闭后调用会收到明确的错误提示。若你在意出网面，关掉即可——代价是模型无法读取你贴给它的 URL，也无法精读长文档，只能靠搜索摘要。
 

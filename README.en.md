@@ -7,7 +7,7 @@ A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github
 It replaces dsh's default `deepseek-official` search/fetch channel with a **multi-engine + automatic fallback** channel: you provide API keys for whichever engines you choose, and it tries them in the order you arrange; if one fails (or runs out of quota) it automatically falls through to the next. A single engine may also carry multiple keys (one per line), rotated in order within that engine. All retrieval requests are issued by dsh's **host process (Node)** straight to each engine — never through the official search backend, and never through an LLM. The browser side holds only the settings card and issues no network requests.
 
 - Registers as a dsh `web` capability channel (providing both `searchProvider` and `fetchProvider`, both with id `web-search-free`).
-- Ships a Web settings card (Settings → Plugins → **Web Search Free**) with drag-to-reorder and per-engine key entry; its copy follows the dsh Language preference, in English or Chinese.
+- Ships a Web configuration card (on dsh ≥ 0.1.6, this package's own page under the sidebar **Plugins** entry; on ≤ 0.1.5, **Settings → Plugins**) with drag-to-reorder and per-engine key entry; its copy follows the dsh Language preference, in English or Chinese. If you cannot find it, see [writing the profile patch directly](#when-the-card-is-nowhere-to-be-found-write-the-profile-patch-directly).
 - Installs as a dsh bundle layer: installing takes over web search/fetch; uninstalling (plus a dsh restart) reverts to the default channel — no manual profile edits.
 - The `web_fetch` (URL retrieval) capability can be switched on and off from the card — with it off, every model call to `web_fetch` returns a clear "backend disabled" error instead of fetching.
 
@@ -102,7 +102,14 @@ After installing, start the dsh Web UI:
 dsh web          # equivalent to dsh --profile web
 ```
 
-Open the **Settings → Plugins → Web Search Free** card:
+First find the configuration card — where it lives depends on your dsh version, and the plugin places itself into whichever seat that version actually has:
+
+| dsh version | Where the card is |
+| --- | --- |
+| ≥ 0.1.6 | Sidebar **插件 (Plugins)** → **web-search-free** under "已安装 (Installed)"; the form sits between the package description and its components |
+| ≤ 0.1.5 | **Settings → Plugins → Web Search Free** |
+
+Then:
 
 1. Expand the card. Engines come in two groups: **"调用顺序" (call order)** holds the engines with a saved key — the ones actually in the chain, numbered `#1`, `#2`, …; **"其他可用引擎 (n)" (other available engines)** holds the ones with no key yet, collapsed by default — click the heading to expand. Each row shows the engine name, a capability chip (`Search · Fetch` or `Search only`), the free tier, and the count of configured keys.
 2. **Click a row** to expand it; an input appears. Paste the API key into it; the in-row "Get API key ↗" link goes straight to each engine's signup page. An engine may carry multiple keys: **one per line**, rotated in order within the engine. Click the row again to collapse it. On save, the row moves up into the call-order group.
@@ -111,6 +118,27 @@ Open the **Settings → Plugins → Web Search Free** card:
 5. Click "Save". Settings persist through the dsh settings namespace (`web-search-free`) and take effect on the next search, with no restart. The card header shows a badge with the count of configured engines, so you can tell at a glance whether the plugin is ready without expanding.
 
 **Configure at least one engine's key**, otherwise search/fetch fails with `No web search providers configured.`
+
+### When the card is nowhere to be found: write the profile patch directly
+
+dsh's plugin configuration surface is still moving fast, and the slot the card occupies has been renamed more than once. The plugin knows every slot name that has existed so far, but if your dsh is newer than this plugin and the slot changed again, the card simply will not appear (the browser console then carries one line, `[web-search-free] no settings card mounted: …`, listing the plugin-related slots your dsh does declare — please paste that line into an issue).
+
+You do not have to wait for a new release: **every setting can be written straight into the profile's `~/.dsh/profiles/web/cordis.patch.yml`**, a path that depends on no UI at all.
+
+Installing the plugin already inserted the `web-search-free` row through its own bundle layer, so what you write here is an **id-targeted override of that row's config** (do not write another `insert` — that would add a duplicate row):
+
+```yaml
+- id: web-search-free
+  config:
+    tavilyApiKey: tvly-xxxxxxxx
+    exaApiKey: |-
+      key-1
+      key-2
+    enableFetch: true
+    providerOrder: [tavily, exa, tinyfish]
+```
+
+The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply. Values saved from the card live in the user layer and override the base values set here.
 
 > On `web_fetch`: since dsh 0.1.5 the stock compositions enable it by default (mounted by dsh-base's `tool-web` row on TUI/headless, and by each agent preset's row on the Web surface), and the tool always stays in the model's catalog. This plugin takes over which backend serves it and adds a switch: with it off, calls return a clear error instead of fetching. Turn it off if the outbound surface concerns you — the cost is that the model can no longer read a URL you paste, nor read a long document in depth; it only sees search snippets.
 
