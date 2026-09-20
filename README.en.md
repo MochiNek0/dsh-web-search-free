@@ -1,131 +1,118 @@
 # dsh-web-search-free
 
-English | [中文](https://github.com/MochiNek0/dsh-web-search-free/blob/main/README.md)
+[中文](https://github.com/MochiNek0/dsh-web-search-free/blob/main/README.md) | English
 
-A free Web Search / web fetch plugin for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness).
+A free web search / page fetching plugin for [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness). It replaces dsh's default `deepseek-official` channel with **multi-engine + automatic fallback**: you provide keys for whichever engines you like, and it tries them in the order you arrange, falling through on failure or exhausted quota. A single engine may carry multiple keys (one per line), rotated in order too.
 
-It replaces dsh's default `deepseek-official` search/fetch channel with a **multi-engine + automatic fallback** channel: you provide API keys for whichever engines you choose, and it tries them in the order you arrange; if one fails (or runs out of quota) it automatically falls through to the next. A single engine may also carry multiple keys (one per line), rotated in order within that engine. All retrieval requests are issued by dsh's **host process (Node)** straight to each engine — never through the official search backend, and never through an LLM. The browser side holds only the settings card and issues no network requests.
+- **Burns no model tokens** — it hits each engine's dedicated retrieval endpoint, never an LLM.
+- **Takes over on install, falls back on removal** — installed as a dsh bundle layer, no manual profile edits.
+- **Ships a configuration card** — drag to reorder, add keys one by one; its copy follows the dsh Language preference.
+- **`web_fetch` can be switched off** — every call then returns a clear "backend disabled" error.
 
-- Registers as a dsh `web` capability channel (providing both `searchProvider` and `fetchProvider`, both with id `web-search-free`).
-- Ships a Web configuration card (on dsh ≥ 0.1.6, this package's own page under the sidebar **Plugins** entry; on ≤ 0.1.5, **Settings → Plugins**) with drag-to-reorder and per-engine key entry; its copy follows the dsh Language preference, in English or Chinese. If you cannot find it, see [writing the profile patch directly](#when-the-card-is-nowhere-to-be-found-write-the-profile-patch-directly).
-- Installs as a dsh bundle layer: installing takes over web search/fetch; uninstalling (plus a dsh restart) reverts to the default channel — no manual profile edits.
-- The `web_fetch` (URL retrieval) capability can be switched on and off from the card — with it off, every model call to `web_fetch` returns a clear "backend disabled" error instead of fetching.
+All retrieval requests are issued by dsh's **host process (Node)** straight to each engine, never through the official search backend. The browser side holds only the configuration card and issues no network requests.
 
-## Why "free": the billing difference vs. the official channel
+## Why "free"
 
-dsh's default official channel `deepseek-official` (provided by `@deepseek-ai/dsh-web-search-deepseek`) is **not a dedicated search endpoint**: every search issues a **full Messages model call** (`POST …/anthropic/v1/messages` with the native `web_search` server tool), DeepSeek runs the search server-side and returns structured result blocks. So each search burns two sets of tokens:
+The official channel `deepseek-official` (from `@deepseek-ai/dsh-web-search-deepseek`) is **not a dedicated search endpoint**: every search makes a **full Messages model call** carrying the native server-side `web_search` tool, with DeepSeek running the search server-side. So each search burns tokens twice — the auxiliary search request itself (input + output; `maxTokens` defaults to 4096, `maxUses` to 5), and the resulting sources injected back into the conversation context, resent on every turn until compaction. Both come out of your `DEEPSEEK_API_KEY` balance.
 
-1. **The auxiliary search request itself** — an independent model receives `Perform a web search for the query: <query>` plus a tool definition and incurs input + output tokens (`maxTokens` defaults to 4096, `maxUses` to 5); it's a complete model turn, billed for latency and generation like any model call.
-2. **The results re-entering the conversation** — the parsed sources (URL/title/snippet) are injected back into the conversation model's context and resent as conversation tokens until compaction.
+This plugin calls each engine's retrieval endpoint directly (Tavily `/search`, Exa `/search`, Jina `s.jina.ai`, …) — pure retrieval:
 
-Both are charged against your `DEEPSEEK_API_KEY` balance.
+|                | Official `deepseek-official`                                               | This plugin `web-search-free`                        |
+| -------------- | -------------------------------------------------------------------------- | ---------------------------------------------------- |
+| How it queries | A full LLM model call + server-side search tool                            | Direct calls to each engine's retrieval endpoint      |
+| Model tokens   | Burned on every search (input + output)                                    | **0** (pure retrieval, no LLM involved)               |
+| Billed to      | Your DeepSeek API balance                                                  | Each search API's own quota (most have a free tier)   |
+| Credentials    | **Requires** `DEEPSEEK_API_KEY`                                            | Each engine's own API key                             |
+| Result payload | Sources only; snippets come from what the model quoted, so unquoted results have **no snippet** | Sources + snippets; Tavily adds a direct answer |
 
-This plugin instead calls each engine's **dedicated retrieval endpoint** (e.g. Tavily `/search`, Exa `/search`, Jina `s.jina.ai`) — pure retrieval, never touching any LLM:
-
-|                  | Official `deepseek-official`                                                                        | This plugin `web-search-free`                              |
-| ---------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Retrieval method | One full LLM model call + server-side search tool                                                   | Direct calls to each engine's dedicated retrieval endpoint |
-| Model tokens     | Burned every search (input + output)                                                                | **0** (pure retrieval, no LLM involved)                    |
-| Billed against   | DeepSeek API balance                                                                                | Each search API's own quota (most have a free tier)        |
-| Credentials      | **Requires** `DEEPSEEK_API_KEY`                                                                     | Per-engine API keys                                        |
-| Result content   | Sources only; snippets come from the model's citations, so an uncited result carries **no snippet** | Sources + snippets; Tavily also returns a direct answer    |
-
-That's the core reason the plugin is named "free" — the official channel burns a whole model turn per search, while this one does pure retrieval and burns zero tokens.
-
-> One more trap worth knowing: the official channel **hard-requires `DEEPSEEK_API_KEY`**. If your conversation model runs through a third-party route (a self-hosted provider, a relay, …) you likely never configured that key — and the official provider's `available()` only checks whether _a key resolver exists_ (one always does), so dsh selects it as usual and **only throws `WEB_PROVIDER_CREDENTIAL_MISSING` once the model actually calls `web_search`**. Nothing in the UI hints at it. This plugin needs no LLM credential at all.
+> **An easy trap**: the official channel hard-depends on `DEEPSEEK_API_KEY`. If your conversation model runs through a third party (self-hosted provider, a relay, …) you probably never set it — and the official provider's `available()` only checks whether a key *resolver* exists (always true), so dsh selects it anyway and **only raises `WEB_PROVIDER_CREDENTIAL_MISSING` once the model actually calls `web_search`**, with nothing visible in the UI beforehand. This plugin depends on no LLM credential.
 
 ## Supported engines
 
-| Engine         | Search | Fetch | Result dates | Free tier                          | Get an API key                                    |
-| -------------- | :----: | :---: | :----------: | ---------------------------------- | ------------------------------------------------- |
-| TinyFish       |   ✓    |   ✓   |     some     | Search/fetch free (rate-limited only) | <https://www.tinyfish.ai/pricing>              |
-| AnySearch      |   ✓    |   ✓   |      ✗       | 1,000/day (resets daily)           | <https://anysearch.com/pricing>                   |
-| Exa (Metaphor) |   ✓    |   ✓   |     some     | $20 on signup + $10/month credit (cumulative, no monthly reset) | <https://dashboard.exa.ai/> |
-| Tavily         |   ✓    |   ✓   |      ✗       | 1,000 credits/month (monthly reset) | <https://app.tavily.com/>                        |
-| Firecrawl      |   ✓    |   ✓   |      ✗       | 1,000 credits/month (search costs 2 credits/10 results) | <https://www.firecrawl.dev/>          |
-| Serping API    |   ✓    |   ✗   |     some     | 1,000/month (monthly reset, no card) | <https://serpingapi.com/signup>                  |
-| Brave Search   |   ✓    |   ✗   |   **most**   | $5 credit/month (card required, not charged) | <https://api-dashboard.search.brave.com/register> |
-| SerpApi        |   ✓    |   ✗   |     weak     | 250/month (monthly reset)           | <https://serpapi.com/users/sign_up>              |
-| Jina AI        |   ✓    |   ✓   |     some     | New key gets 10M tokens (one-time, until exhausted) | <https://jina.ai/api-key>                |
+| Engine         | Search | Fetch | Result date | Free tier                                                  | Get an API key                                    |
+| -------------- | :----: | :---: | :---------: | ---------------------------------------------------------- | ------------------------------------------------- |
+| TinyFish       |   ✓    |   ✓   |   partial   | Search & fetch free (rate-limited only)                    | <https://www.tinyfish.ai/pricing>                 |
+| AnySearch      |   ✓    |   ✓   |      ✗      | 1,000 calls/day (resets daily)                             | <https://anysearch.com/pricing>                   |
+| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                       |
+| Tavily         |   ✓    |   ✓   |      ✗      | 1,000 credits/month (resets monthly)                       | <https://app.tavily.com/>                         |
+| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                      |
+| Serping API    |   ✓    |   ✗   |   partial   | 1,000 calls/month (resets monthly, no card)                | <https://serpingapi.com/signup>                   |
+| Brave Search   |   ✓    |   ✗   |  **most**   | $5 credit/month (card required, not charged)               | <https://api-dashboard.search.brave.com/register> |
+| SerpApi        |   ✓    |   ✗   |    weak     | 250 calls/month (resets monthly)                           | <https://serpapi.com/users/sign_up>               |
+| Jina AI        |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time, no reset)               | <https://jina.ai/api-key>                         |
 
-> The table order is the default call order (sorted by sustainable free volume, largest first). Jina is a one-time grant but still enters the fetch chain — any engine with a key and `supportsFetch: true` is picked by `getActiveProviders('fetch')` regardless of its position in the search chain.
+The table order is the default call order (largest sustainable free tier first). Two things to note:
 
-> **On how each free tier works**: Jina is a **one-time token grant** (new keys get 10M tokens; `s.jina.ai` search costs a fixed 10,000 tokens per request, so that's roughly 1,000 searches before it's gone — no reset, top up or rotate keys); Exa is a **cumulative credit balance** ($20 on signup + $10/month added, balance doesn't reset, ~1,400 basic searches); AnySearch is **daily reset** (1,000/day, ~30k/month); Tavily / Firecrawl / Serping API / SerpApi are **monthly reset**; Brave is also a monthly $5 credit reset; TinyFish's search and fetch are completely free, rate-limited only (free tier: Search 30 req/min, Fetch 150 url/min).
+- **Fetching**: Brave, Serping API and SerpApi are pure SERP APIs with no URL fetch endpoint, so they only join the search chain. If those three are all you configured, the fetch chain is empty and fails with `No web fetch providers configured.` — add a key for an engine that supports fetching.
+- **Result dates**: `publishedAt` is what lets the model judge how current a result is, and coverage varies a lot. Brave is the most complete (18/20 measured); Exa, Jina, TinyFish, Serping API and SerpApi carry it on some results; Tavily's `published_date` is only returned under `topic: 'news'`, so it is empty here; Firecrawl and AnySearch have no such field. If recency matters, move Brave up the call order — at the cost of Tavily's direct answer and longer excerpts.
 
-**On fetch**: Brave Search, Serping API and SerpApi are pure SERP APIs with no URL-fetch endpoint, so they **never enter the fetch chain** (search only). If only those are configured with keys, the fetch chain is empty and fails with `No web fetch providers configured.` — configure a key for an engine that supports fetch as well.
+<details>
+<summary>How each free tier resets (click to expand)</summary>
 
-**On result dates**: `publishedAt` is what lets the model judge how current a result is, and engines differ sharply (measured coverage from a single query, indicative only): Brave `page_age` 18/20, Exa `publishedDate` 4/10, Jina `publishedTime` 1–3/10, TinyFish `date` (reliable for news, partial for web), Serping API `date` (some results, display string), SerpApi `date` (weak, display string). Tavily's `published_date` is returned **only under `topic: 'news'`**, and this plugin runs general web search, so it is empty in practice. Firecrawl and AnySearch carry no date field at all.
+- **Jina**: one-time tokens — 10M on a new key, `s.jina.ai` charging a flat 10k per search (≈1,000 searches). Once spent you top up or rotate the key; it never resets.
+- **Exa**: rolling credit — $20 on signup plus $10/month, never zeroed (≈1,400 basic searches).
+- **AnySearch**: resets daily, 1,000 calls/day (≈30k/month).
+- **Tavily / Firecrawl / Serping API / SerpApi / Brave**: reset monthly.
+- **TinyFish**: search and fetch are free outright, limited only by rate (free tier: Search 30 req/min, Fetch 150 url/min).
 
-> If recency matters to you, move Brave up the call order — at the cost of Tavily's direct answer and its longer excerpts.
-
-## Prerequisites
-
-- **dsh ≥ 0.1.2-rc.1**. From that version on, the host composition (dsh-base's `tool-web` row and every agent preset) mounts `web_search`/`web_fetch` itself and serves them through the `@deepseek-ai/dsh-web` seam; this plugin only registers providers into the seam. On older versions (≤ 0.1.2-alpha.5) the composition mounts no web tools, so with this plugin **search works but `web_fetch` never appears** (use 1.3.0 there — it mounts tool-web itself).
-- dsh installed, with the `dsh` command available (when developing inside a dsh source checkout, use `pnpm dsh ...` instead).
-- `pnpm` on your `PATH` (`dsh plugin` manages dependencies via pnpm inside the profile directory).
-- The target profile is usually `web` (this plugin's client half declares `platform: web`; the settings card only appears in the Web UI). The `web` profile auto-initializes from a template on first use.
+</details>
 
 ## Installation
 
-`dsh plugin --profile <name> <pnpm args>` forwards the pnpm arguments into the profile directory and, **after a successful run, automatically reconciles `dsh.profile.bundles`**: any dependency that resolves to a package declaring `dsh.bundle` is appended to the bundle layer stack — this plugin declares exactly `dsh.bundle.patch`, so installing it takes over web search/fetch with no manual profile edit.
-
-### From npm (recommended)
+Prerequisites: **dsh ≥ 0.1.2-rc.1**, `pnpm` on `PATH`, and a target profile — usually `web` (this plugin's client half declares `platform: web`, so the card only appears in the Web UI; the `web` profile auto-initializes from a template on first use).
 
 ```sh
 dsh plugin --profile web add dsh-web-search-free
 ```
 
-### From local source (for development / further hacking)
+`dsh plugin` forwards its pnpm arguments into the profile directory and, on success, **reconciles `dsh.profile.bundles`** — this plugin declares `dsh.bundle.patch`, so installing it takes over web search/fetch with no manual profile edit.
 
-This repo gitignores `dist/`, so build the artifacts before installing.
+<details>
+<summary>Installing from local source (for hacking on it)</summary>
+
+`dist/` is gitignored, so build before installing:
 
 ```sh
-# 1) Build in the plugin repo
 cd /path/to/dsh-web-search-free
 pnpm install
-pnpm build            # produces dist/index.js and dist/client.js
-
-# 2) Add it to the web profile (run inside the plugin dir; "." is anchored to the cwd)
-dsh plugin --profile web add .
+pnpm build                          # produces dist/index.js and dist/client.js
+dsh plugin --profile web add .      # "." anchors to the current directory; an absolute path works too
 ```
 
-> You can also use an absolute path and run from anywhere:
-> `dsh plugin --profile web add /absolute/path/to/dsh-web-search-free`
->
-> pnpm installs local directories as a link by default, so **rebuilding with `pnpm build` from source is picked up by the profile immediately** — handy for iteration. After changing the client half, refresh the browser (client-plugin hot-reload requires a rebuild watcher like `pnpm run dev:web` to be running).
+pnpm links local directories by default, so a later `pnpm build` reaches the profile immediately. After changing the client half, just refresh the browser.
+
+</details>
+
+<details>
+<summary>Older dsh (≤ 0.1.2-alpha.5)</summary>
+
+Those compositions do not mount the web tools, so with this plugin installed **search works but `web_fetch` never appears** — use 1.3.0 instead, which mounts `tool-web` itself.
+
+</details>
 
 ## Configuration
 
-After installing, start the dsh Web UI:
-
-```sh
-dsh web          # equivalent to dsh --profile web
-```
-
-First find the configuration card — where it lives depends on your dsh version, and the plugin places itself into whichever seat that version actually has:
+Start the Web UI (`dsh web`) and find the configuration card. Where it lives depends on your dsh version, and the plugin places itself into whichever seat that version actually has:
 
 | dsh version | Where the card is |
 | --- | --- |
 | ≥ 0.1.6 | Sidebar **插件 (Plugins)** → **web-search-free** under "已安装 (Installed)"; the form sits between the package description and its components |
 | ≤ 0.1.5 | **Settings → Plugins → Web Search Free** |
 
-Then:
+Engines come in two groups: **call order** holds the ones with a saved key — those actually in the chain, numbered `#1`, `#2`, … — and **other available engines** holds the rest.
 
-1. Expand the card. Engines come in two groups: **"调用顺序" (call order)** holds the engines with a saved key — the ones actually in the chain, numbered `#1`, `#2`, …; **"其他可用引擎 (n)" (other available engines)** holds the ones with no key yet, collapsed by default — click the heading to expand. Each row shows the engine name, a capability chip (`Search · Fetch` or `Search only`), the free tier, and the count of configured keys.
-2. **Click a row** to expand it; an input appears. Paste the API key into it; the in-row "Get API key ↗" link goes straight to each engine's signup page. An engine may carry multiple keys: **one per line**, rotated in order within the engine. Click the row again to collapse it. On save, the row moves up into the call-order group.
-3. **Drag the `⋮⋮` handle on the left of a row** to set the call order: engines higher up are tried first, failing through to the next in order; multiple keys for the same engine are also tried in turn — the first successful (engine, key) pair returns, and only an all-fail raises an error. Engines with no key never enter the call chain and have nothing to order, so only rows in the call-order group are draggable. Note that clicking the row body toggles expand/collapse; to drag, grab the `⋮⋮` handle.
-4. Above the engine list is the **"Enable web_fetch (URL retrieval)"** switch. On, the model can call `web_fetch` on a given URL for full text; off, every call returns a clear error instead (`web_fetch` itself is mounted by dsh — the switch gates this plugin's fetch backend, it no longer removes the tool from the model's catalog). Toggling takes effect immediately, with no restart.
-5. Click "Save". Settings persist through the dsh settings namespace (`web-search-free`) and take effect on the next search, with no restart. The card header shows a badge with the count of configured engines, so you can tell at a glance whether the plugin is ready without expanding.
+1. **Click a row** to expand it and paste an API key; the in-row "Get an API key ↗" link goes to the signup page. An engine takes multiple keys, **one per line**, rotated in order. On save the row moves up into the call order.
+2. **Drag the `⋮⋮` handle** to reorder: higher rows are tried first, failing through in order, and the first successful (engine, key) pair returns. Only rows in the call order are draggable; clicking the row body toggles expand/collapse, so grab `⋮⋮` to drag.
+3. The **"Enable web_fetch (URL fetching)"** switch at the top controls whether the model can fetch full page text. Off, calls return a clear error rather than the tool disappearing from the catalog.
+4. Click **Save**. Settings persist in the dsh settings namespace `web-search-free` and take effect on the next search, with no restart.
 
-**Configure at least one engine's key**, otherwise search/fetch fails with `No web search providers configured.`
+**Configure at least one engine's key**, otherwise search fails with `No web search providers configured.`
 
-### When the card is nowhere to be found: write the profile patch directly
+### When the card is nowhere to be found
 
-dsh's plugin configuration surface is still moving fast, and the slot the card occupies has been renamed more than once. The plugin knows every slot name that has existed so far, but if your dsh is newer than this plugin and the slot changed again, the card simply will not appear (the browser console then carries one line, `[web-search-free] no settings card mounted: …`, listing the plugin-related slots your dsh does declare — please paste that line into an issue).
+dsh's plugin configuration surface is still moving fast, and the slot the card occupies has been renamed more than once. The plugin knows every slot name that has existed so far, but if your dsh is newer than the plugin and the slot changed again, the card will not appear — the browser console then carries one line, `[web-search-free] no settings card mounted: …`, listing the plugin-related slots your dsh does declare. **Please paste that line into an issue.**
 
-You do not have to wait for a new release: **every setting can be written straight into the profile's `~/.dsh/profiles/web/cordis.patch.yml`**, a path that depends on no UI at all.
-
-Installing the plugin already inserted the `web-search-free` row through its own bundle layer, so what you write here is an **id-targeted override of that row's config** (do not write another `insert` — that would add a duplicate row):
+You do not have to wait for a release: **every setting can be written straight into the profile's `~/.dsh/profiles/web/cordis.patch.yml`**, a path that depends on no UI. Installing already inserted the `web-search-free` row through the plugin's own bundle layer, so what you write here is an **id-targeted override of that row's config** (do not write another `insert` — that adds a duplicate row):
 
 ```yaml
 - id: web-search-free
@@ -138,58 +125,53 @@ Installing the plugin already inserted the `web-search-free` row through its own
     providerOrder: [tavily, exa, tinyfish]
 ```
 
-The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply. Values saved from the card live in the user layer and override the base values set here.
+The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply; values saved from the card live in the user layer and override the base values set here.
 
-> On `web_fetch`: since dsh 0.1.5 the stock compositions enable it by default (mounted by dsh-base's `tool-web` row on TUI/headless, and by each agent preset's row on the Web surface), and the tool always stays in the model's catalog. This plugin takes over which backend serves it and adds a switch: with it off, calls return a clear error instead of fetching. Turn it off if the outbound surface concerns you — the cost is that the model can no longer read a URL you paste, nor read a long document in depth; it only sees search snippets.
+## Verifying it works
 
-## Verification
+Start `dsh web` and ask the model to search or fetch ("search for today's news", "fetch the contents of https://example.com"). When an engine fails you will see `Provider <name> ... failed. Trying next provider ...` in the log, followed by the next attempt.
 
-1. Start the Web UI with `dsh web`.
-2. Ask the model to use web search/fetch in a conversation (e.g. "search for today's news" or "fetch the content of https://example.com"). Fetching requires **"Enable web_fetch"** to be on in the card; otherwise model calls to `web_fetch` return a "backend disabled" error.
-3. The request flows through the `web-search-free` channel in your arranged engine order; on a failure you'll see `Provider <name> ... failed. Trying next provider ...` in the logs, then the next engine is tried automatically.
-
-## Updating
+## Updating and uninstalling
 
 ```sh
-# Local source: just rebuild (linked install, no reinstall needed)
-cd /path/to/dsh-web-search-free && pnpm build
-
-# npm: upgrade to a new version
-dsh plugin --profile web update dsh-web-search-free
+dsh plugin --profile web update dsh-web-search-free    # upgrade
+dsh plugin --profile web remove dsh-web-search-free    # uninstall
 ```
 
-`update` also triggers reconciliation: if the new version adds or drops a `dsh.bundle` declaration, the bundle layer stack follows automatically.
+Both reconcile the bundle stack: after removal, web search/fetch **falls back to dsh-base's `deepseek-official` channel** with no manual profile edit.
 
-## Uninstalling
+Two things to keep in mind:
 
-```sh
-dsh plugin --profile web remove dsh-web-search-free
-```
-
-Reconciliation removes this plugin from `dsh.profile.bundles`, and web search/fetch **reverts to dsh-base's `deepseek-official` default channel** — no manual profile or patch edit.
-
-Two caveats:
-
-- **Click "Clear all settings" at the bottom of the card before uninstalling.** dsh's uninstall flow does not delete a settings namespace's stored section, so your API keys would stay in `$DSH_HOME/settings.yaml`. That button erases every value this plugin wrote (click twice to confirm). An empty `web-search-free:` key remains in the file afterwards — it holds no values, and no client-side API can delete the key itself.
-- **Restart dsh after uninstalling** for the fallback to actually take effect. The `web` row's provider selection is composed at boot; uninstalling only deactivates this plugin's entry in the running process, and until a restart search fails with `WEB_PROVIDER_CONFIGURED_MISSING`.
+- **Click "Clear all settings" at the bottom of the card first.** dsh's uninstall flow does not delete anything in the settings namespace, so your API keys would stay in `$DSH_HOME/settings.yaml`. That button clears every value this plugin wrote (two clicks to confirm).
+- **Restart dsh after uninstalling.** The `web` row's provider selection is composed at startup; until you restart, search fails with `WEB_PROVIDER_CONFIGURED_MISSING`.
 
 ## How it works
 
-This plugin is a dsh **bundle layer** (`package.json` declares `dsh.bundle.patch: ./cordis.patch.yml`). `cordis.patch.yml` does two things:
+This plugin is a dsh **bundle layer** (`package.json` declares `dsh.bundle.patch: ./cordis.patch.yml`). The patch does two things: it `insert`s a `web-search-free` row to bring the host half into the composition, then uses a same-id `web` override to repoint both `searchProvider` and `fetchProvider` at `web-search-free`, beating the `deepseek-official` that `dsh-base` pins.
 
-- `insert`s a `web-search-free` row to bring this plugin's host half into the composition;
-- uses a same-id `web` override layer to repoint both `searchProvider` and `fetchProvider` to `web-search-free`, overriding the `deepseek-official` that dsh-base pins.
+The host half (`src/index.ts`) registers the search and fetch providers on `ctx.web` and walks the keyed engines in `providerOrder` for fallback. The client half (`src/client.tsx`) registers the React configuration card, reading and writing the same `web-search-free` namespace. That namespace string is what aligns the two halves.
 
-The host half (`src/index.ts`, `inject: ['web']`) registers search and fetch providers into `ctx.web`, iterating configured-key engines in `providerOrder` order with fallback; each engine's key field may hold multiple values (one per line), rotated in order within the engine. The client half (`src/client.tsx`) registers a React card on the Plugins settings page, reading and writing the same `web-search-free` settings namespace. The two halves are aligned by that namespace string.
+<details>
+<summary>Deeper implementation notes (click to expand)</summary>
 
-Mounting the `web_fetch` tool itself belongs to the composition (dsh ≥ 0.1.5): dsh-base's `tool-web` row mounts it with `fetch: true` on TUI/headless, and on the Web surface every shipped agent preset mounts its own scoped `tool-web` row. Preset files are loaded by dsh-agent-presets from its own roots, outside the profile patch stack, so a bundle patch cannot reach them — and does not need to: all of those rows serve their tools through the same capability seam, which the `web` override layer above already points at this plugin. So this plugin does **not** mount `dsh-tool-web` itself (the pre-0.1.5 approach): a per-agent scope shadows a global registration, so a global self-mount would only duplicate-register `web_fetch` against each preset's row, and disposing its own fiber could never remove what the preset's row registered.
+**Why it does not mount `tool-web` itself**: mounting the `web_fetch` tool belongs to the composition (dsh ≥ 0.1.5) — `dsh-base`'s `tool-web` row mounts it on TUI/headless, and on the Web surface each agent preset mounts its own row. Preset files are loaded by dsh-agent-presets from its own roots and are not part of the profile patch stack, so a bundle patch cannot reach them — and none needs to: every one of those rows draws from the same capability seam, which the `web` override above already points here. Self-mounting would only duplicate-register `web_fetch` against the preset rows, and since a per-agent scope shadows a global registration, unloading this plugin's fiber could never remove the preset's copy.
 
-`enableFetch` is therefore implemented as a gate on the FETCH PROVIDER's availability: the seam reads `available()` at every execution, so with it off `web_fetch` stays listed and each call fails with the seam's structured `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` error (the dsh-sanctioned semantics). Toggling takes effect immediately, with no watch or re-mount wiring. Both provider registrations are wired through `ctx.effect`: dsh-web's `register*` returns a disposer, so disabling or hot-reloading the plugin withdraws its providers from the seam instead of tripping `WEB_DUPLICATE_PROVIDER` on the next apply.
+**Why `enableFetch` is a provider gate**: it is implemented as the fetch provider's **availability** — the seam reads `available()` on each execution, so with the switch off `web_fetch` stays in the catalog but every call returns a structured `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` error (dsh's own semantics). Toggling takes effect immediately, with no watch or remount wiring. Both provider registrations hang off `ctx.effect`, so a disabled plugin or a hot reload withdraws them from the seam instead of hitting `WEB_DUPLICATE_PROVIDER` on the next apply.
 
-The build has two steps (the package declares `"type": "module"`): `tsconfig.json` (`module: NodeNext`) compiles the host half to ESM (`dist/index.js` etc., matching dsh's ESM runtime and avoiding the load race triggered when CJS `require()`s an ESM dependency); `tsconfig.client.json` (`module: CommonJS`) compiles `dist/client.js` separately, which `wrap-client.cjs` then wraps as `window.__ModuleLoader__.load(...)` so it can be loaded by dsh's browser-side module loader. The host half imports `Schema` from `@deepseek-ai/schemastery` (not the legacy `cordis`), and `Context` is imported as a type only from `@deepseek-ai/cordis`.
+**How the card keeps up with dsh's slot renames**: the client half holds a table of candidate slots (`SLOT_CANDIDATES`) and calls `ctx.slots.inject` once per candidate — that call *waits* for a slot the host has never declared rather than throwing, so one build serves several dsh versions. An arbiter keeps exactly one card mounted even if some transitional release declares both. When none of them turns up, it prints the diagnostic line above.
 
-The plugin is installed *beside* a profile, so every host service must resolve to the ONE instance the running dsh already loaded. Any `@deepseek-ai/*` entry in `dependencies` — or in `peerDependencies` without `optional: true`, which pnpm auto-installs — becomes a private second copy inside the user's profile; under a hoisted node_modules it lands at the profile root and shadows the harness's own, so Cordis Service identities stop matching. That failure only appears on someone else's machine and a local `pnpm build` can never surface it, so `prepublishOnly` runs `scripts/check-package.cjs` as a gate: no host package in `dependencies`, host peers must be optional, dist's actual imports and the declared dependencies must agree both ways, and `exports` condition order plus the wrapped client bundle are verified. Run `pnpm run check` after touching `package.json`.
+**Why the build has two steps** (the package declares `"type": "module"`): `tsconfig.json` (`module: NodeNext`) compiles the host half to ESM, matching the dsh runtime and avoiding the load race a CJS `require()` of an ESM dependency triggers; `tsconfig.client.json` (`module: CommonJS`) emits `dist/client.js` separately, which `wrap-client.cjs` then wraps as `window.__ModuleLoader__.load(...)` for dsh's browser-side module loader.
+
+**The publish gate**: the plugin installs *beside* the profile, so every host service must resolve to the one instance of the running dsh. Any `@deepseek-ai/*` that lands in `dependencies` (or in a non-optional `peerDependencies` — pnpm installs those automatically) creates a private copy inside the user's profile that shadows the host's, and Cordis Service identity stops matching. That kind of breakage only shows up on other people's machines, so `prepublishOnly` runs `scripts/check-package.cjs` to block it before release. Run `pnpm run check` after touching `package.json`.
+
+</details>
+
+## Feedback and updates
+
+Upstream dsh is still iterating quickly — slot positions, interface semantics and composition can all shift between releases, and this plugin will occasionally lag behind. If anything goes wrong — the card does not show up, an engine errors out, behavior is off on a new dsh — please [open an issue](https://github.com/MochiNek0/dsh-web-search-free/issues) with your dsh version and the error. The plugin will keep being updated to follow along.
+
+Thanks to everyone for the support 🙏
 
 ## License
 
-MIT, see [LICENSE](https://github.com/MochiNek0/dsh-web-search-free/blob/main/LICENSE).
+MIT — see [LICENSE](https://github.com/MochiNek0/dsh-web-search-free/blob/main/LICENSE).
