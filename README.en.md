@@ -125,7 +125,21 @@ You do not have to wait for a release: **every setting can be written straight i
     providerOrder: [tavily, exa, tinyfish]
 ```
 
-The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply; values saved from the card live in the user layer and override the base values set here.
+The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply.
+
+How this relates to the card depends on the dsh version: on dsh >= 0.1.7 the card writes to *this very file* — same layer, so saving from the card overwrites the fields you hand-wrote here. On dsh <= 0.1.6 the card writes a separate settings document (`~/.dsh/settings.yaml`) whose values form the user layer and override the base values set here.
+
+### Keys gone after upgrading to dsh 0.1.7
+
+Where configuration lives changed in dsh 0.1.7: <= 0.1.6 kept it in `~/.dsh/settings.yaml`, >= 0.1.7 keeps it in the profile's `cordis.patch.yml`. dsh migrates once on its own — renaming `settings.yaml` to `settings.yaml.imported` and writing each section into the entry of the same id — but it runs **only that once**, and only for sections the running composition accepts at that moment.
+
+If this plugin could not start during the upgrade (1.5.x stops the whole web UI at "Failed to load plugins" on 0.1.7), it misses its turn and the keys stay in the renamed file with nothing pointing at them.
+
+**Nothing is lost**: they are in `settings.yaml.imported` under the dsh home (`~/.dsh` by default). The plugin says so in its startup log when it detects this, and the card shows the same hint. The quickest fix is to hand this to dsh:
+
+> Move every field of the web-search-free section in settings.yaml.imported (under the dsh home, ~/.dsh by default) into the current profile's cordis.patch.yml, as the config of the entry with id web-search-free; add that entry if it is missing. Preserve the file's existing comments and formatting, and back it up first.
+
+You can also copy it across by hand in the YAML shape shown above, or simply retype the keys in the card.
 
 ## Verifying it works
 
@@ -159,6 +173,10 @@ The host half (`src/index.ts`) registers the search and fetch providers on `ctx.
 **Why `enableFetch` is a provider gate**: it is implemented as the fetch provider's **availability** — the seam reads `available()` on each execution, so with the switch off `web_fetch` stays in the catalog but every call returns a structured `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` error (dsh's own semantics). Toggling takes effect immediately, with no watch or remount wiring. Both provider registrations hang off `ctx.effect`, so a disabled plugin or a hot reload withdraws them from the seam instead of hitting `WEB_DUPLICATE_PROVIDER` on the next apply.
 
 **How the card keeps up with dsh's slot renames**: the client half holds a table of candidate slots (`SLOT_CANDIDATES`) and calls `ctx.slots.inject` once per candidate — that call *waits* for a slot the host has never declared rather than throwing, so one build serves several dsh versions. An arbiter keeps exactly one card mounted even if some transitional release declares both. When none of them turns up, it prints the diagnostic line above.
+
+**How the settings face keeps up across generations**: the service carrying the settings section changed too — dsh >= 0.1.7 provides `configForms` (forms keyed by profile entry id), <= 0.1.6 provides `settingsScope` (bound to a registered namespace). Their `getSnapshot` / `subscribe` / `set` / `unset` are identical, so the card itself never learns which it got. The crucial part is that **neither may be named in the top-level `inject`**: a service the host does not provide leaves the whole entry pending forever, and web boot treats an entry that did not activate as fatal (`web boot: 1 entry did not activate`), stopping the entire UI at "Failed to load plugins". Each is therefore awaited in its own child `ctx.inject()` fiber — a child fiber is not a loader entry, so a wait that never resolves costs nothing, and whichever arrives first mounts the card.
+
+**Why every Config field is `.volatile()`**: dsh >= 0.1.7 deleted the settings-namespace registry. A plugin entry's own Config *is* its settings section, and the form is projected from the fields marked `.volatile()` — mark none and `volatileForm()` returns undefined, the entry never reaches the browser's describe mirror, and the card reads "unavailable" forever. The wrapping, however, is done by schemastery at parse time and is independent of the host version, so <= 0.1.6's `settings.register` must be handed the **unmarked** schema (otherwise every field surfaces as `{}`). Both schemas are therefore derived from one field table, and every read goes through `liveConfig()` to unwrap.
 
 **Why the build has two steps** (the package declares `"type": "module"`): `tsconfig.json` (`module: NodeNext`) compiles the host half to ESM, matching the dsh runtime and avoiding the load race a CJS `require()` of an ESM dependency triggers; `tsconfig.client.json` (`module: CommonJS`) emits `dist/client.js` separately, which `wrap-client.cjs` then wraps as `window.__ModuleLoader__.load(...)` for dsh's browser-side module loader.
 

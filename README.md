@@ -125,7 +125,21 @@ dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不�
     providerOrder: [tavily, exa, tinyfish]
 ```
 
-字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`。写完重启 dsh 生效；卡片里保存的值属于用户层，会覆盖这里的 base 值。
+字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`。写完重启 dsh 生效。
+
+这里和卡片的关系随 dsh 版本而变：dsh ≥ 0.1.7 的卡片**就是往这个文件写**，两者是同一层，在卡片里保存会覆盖你手写的同名字段；dsh ≤ 0.1.6 的卡片写的是另一份设置文档（`~/.dsh/settings.yaml`），那边的值属于用户层，会盖住这里的 base 值。
+
+### 升级到 dsh 0.1.7 后 Key 不见了
+
+配置的存放位置在 dsh 0.1.7 变了：≤ 0.1.6 存在 `~/.dsh/settings.yaml`，≥ 0.1.7 存进 profile 的 `cordis.patch.yml`。dsh 自己会做一次迁移——把 `settings.yaml` 改名为 `settings.yaml.imported` 并把各段写进同 id 的 entry——但它**只跑一次**，而且只接受当时运行组合里认识的段落。
+
+升级那一刻本插件如果起不来（1.5.x 在 0.1.7 上会让整个 Web 界面停在 "Failed to load plugins"），它就正好会被跳过，Key 留在改名后的文件里没人管。
+
+**数据没丢**，在 dsh 主目录（默认 `~/.dsh`）的 `settings.yaml.imported` 里。插件检测到这种情况时会在启动日志里说明，卡片上也会显示同样的提示。最省事的办法是把这段话发给 dsh 让它代劳：
+
+> 把 dsh 主目录（默认 ~/.dsh）下 settings.yaml.imported 里 web-search-free 段的所有字段，原样写进当前 profile 的 cordis.patch.yml，作为 id 为 web-search-free 的 entry 的 config；该 entry 不存在就新增。保留原文件的注释和格式，改动前先备份。
+
+也可以照上面那段 YAML 的格式自己手抄过去，或者干脆在卡片里重新输一遍。
 
 ## 验证
 
@@ -159,6 +173,10 @@ dsh plugin --profile web remove dsh-web-search-free    # 卸载
 **`enableFetch` 为什么是 provider 开关**：它实现为抓取 provider 的**可用性**——seam 每次执行时读 `available()`，关闭后 `web_fetch` 仍在工具表里，但每次调用返回结构化的 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` 错误（dsh 官方语义）。切换即时生效，无需 watch 或重挂载。两个 provider 的注册接在 `ctx.effect` 上，插件禁用或热重载时会把自己从 seam 摘除，避免下次 apply 撞上 `WEB_DUPLICATE_PROVIDER`。
 
 **配置卡片如何跟上 dsh 的插槽改名**：客户端半边持有一张候选插槽表（`SLOT_CANDIDATES`），每个候选各用一次 `ctx.slots.inject`——它对宿主没有的槽名只是等待、不抛错，所以一份产物能同时适配多个 dsh 版本。一个仲裁器保证同一时刻只挂一张卡，即使某个过渡版本两个槽都在。都没等到时打印上面那行诊断。
+
+**设置接口如何跨代**：承载设置的服务也换过代——dsh ≥ 0.1.7 用 `configForms`（按 profile entry id 取表单），≤ 0.1.6 用 `settingsScope`（按注册的 namespace 绑定）。两者的 `getSnapshot` / `subscribe` / `set` / `unset` 同名同义，所以卡片本身对此无感。关键是**两个都不能写进顶层 `inject`**：宿主没有的 service 会让整个 entry 永远 pending，而 web boot 把「有 entry 没激活」当致命错误抛出（`web boot: 1 entry did not activate`），整个界面停在 "Failed to load plugins"。所以两者各用一个子 `ctx.inject()` fiber 去等——子 fiber 不是 loader entry，等不到也不影响启动，先到的那个挂卡。
+
+**Config 为什么全字段 `.volatile()`**：dsh ≥ 0.1.7 删掉了设置 namespace 注册表，插件 entry 自己的 Config 就是它的设置段，表单由标了 `.volatile()` 的字段投影而来——一个都不标，`volatileForm()` 返回 undefined，这个 entry 根本不会出现在浏览器的 describe 镜像里，卡片会永远显示"不可用"。而包装动作是 schemastery 在解析时做的、与宿主版本无关，所以 ≤ 0.1.6 那边 `settings.register` 必须拿到**未标注的那份** schema（否则每个字段都会变成 `{}`）。两份 schema 因此由同一张字段表派生，读值统一走 `liveConfig()` 解包。
 
 **构建为什么分两步**（包声明 `"type": "module"`）：`tsconfig.json`（`module: NodeNext`）把宿主半边编成 ESM 产物，与 dsh 运行时一致，避免 CJS `require()` 一个 ESM 依赖时的加载竞态；`tsconfig.client.json`（`module: CommonJS`）单独编出 `dist/client.js`，再由 `wrap-client.cjs` 包成 `window.__ModuleLoader__.load(...)`，交给 dsh 浏览器侧的模块加载器。
 

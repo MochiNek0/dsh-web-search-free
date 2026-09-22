@@ -57,11 +57,11 @@
     "prepublishOnly": "pnpm run build && pnpm run check"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "^3.18.3"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/schemastery": "^3.18.3",
     "@types/node": "^18.0.0",
     "@types/react": "^19.2.18",
     "typescript": "^5.0.0"

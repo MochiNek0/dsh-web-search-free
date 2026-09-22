@@ -124,6 +124,13 @@ type Lang = "zh" | "en";
 const zh = {
   "body.loading": "正在读取设置…",
   "body.unavailable": "该连接不同步设置，无法在此配置。",
+  "legacy.title": "从旧版 dsh 升级上来、Key 不见了？",
+  "legacy.body":
+    "dsh 0.1.7 起配置改存到 profile 的 cordis.patch.yml，它的一次性导入会跳过当时不在运行组合里的插件——升级时本插件起不来的话正好会被跳过。你原来的 Key 没有丢，还在 dsh 主目录（默认 ~/.dsh）的 settings.yaml.imported 里。把下面这段话发给 dsh，它就会帮你搬过去：",
+  "legacy.prompt":
+    "把 dsh 主目录（默认 ~/.dsh）下 settings.yaml.imported 里 web-search-free 段的所有字段，原样写进当前 profile 的 cordis.patch.yml，作为 id 为 web-search-free 的 entry 的 config；该 entry 不存在就新增。保留原文件的注释和格式，改动前先备份。",
+  "legacy.copy": "复制指令",
+  "legacy.copied": "已复制",
   intro:
     "填了 Key 的引擎进入「调用顺序」：排在前面的优先调用，失败则 fallback 到下一个，拖 ⋮⋮ 可改顺序。每个引擎可填多个 Key（每行一个），同一引擎内也按顺序轮换。",
   "fetch.label": "启用 web_fetch（URL 抓取）",
@@ -182,6 +189,13 @@ const en: Record<keyof typeof zh, string> = {
   "body.loading": "Loading settings…",
   "body.unavailable":
     "This connection does not sync settings, so it cannot be configured here.",
+  "legacy.title": "Upgraded from an older dsh and your keys are gone?",
+  "legacy.body":
+    "Since dsh 0.1.7 settings live in the profile's cordis.patch.yml, and its one-shot import skips any plugin that was not in the running composition at the time — which is exactly what happens when this plugin could not start during the upgrade. Your keys are not lost: they are still in settings.yaml.imported under the dsh home (~/.dsh by default). Hand the line below to dsh and it will move them across:",
+  "legacy.prompt":
+    "Move every field of the web-search-free section in settings.yaml.imported (under the dsh home, ~/.dsh by default) into the current profile's cordis.patch.yml, as the config of the entry with id web-search-free; add that entry if it is missing. Preserve the file's existing comments and formatting, and back it up first.",
+  "legacy.copy": "Copy instruction",
+  "legacy.copied": "Copied",
   intro:
     "Engines with a key join the call order: the first one is tried first, and a failure falls back to the next. Drag ⋮⋮ to reorder. Each engine takes several keys (one per line), rotated in order too.",
   "fetch.label": "Enable web_fetch (URL fetching)",
@@ -320,13 +334,74 @@ const declaredSlotNames = (nodes: any[], into: string[] = []): string[] => {
   return into;
 };
 
-// `settingsScope.bind` reads `connection` and `remote` off the CALLING context,
-// so both must be declared here alongside the services this plugin uses itself.
-export const inject = ["slots", "settingsScope", "connection", "remote"];
+/**
+ * Every service that can carry this plugin's settings section, most preferred
+ * first. Each entry names the services it needs and how to bind the face.
+ *
+ * - dsh >= 0.1.7 deleted `settingsScope` and replaced it with `configForms`,
+ *   the settings domain base. `get(entryId)` is keyed by the profile ENTRY id
+ *   rather than a registered namespace — for this plugin the same string, since
+ *   its bundle patch names the row `web-search-free`.
+ * - dsh <= 0.1.6 provides `settingsScope`, bound to the namespace the host half
+ *   registers. `bind()` reads `connection` and `remote` off the CALLING
+ *   context, so those two travel with it.
+ *
+ * Both faces expose the same `getSnapshot` / `subscribe` / `set` / `unset`
+ * (only the write return type differs, and this card reads back rather than
+ * trusting it), so everything below is written against either one without
+ * knowing which it got.
+ *
+ * NEITHER may be named in the top-level `inject`. A service the host does not
+ * provide leaves the entry PENDING forever, and web boot treats an entry that
+ * did not activate as FATAL — it throws `web boot: 1 entry did not activate`
+ * and the whole UI stops at "Failed to load plugins". One optional service
+ * would therefore take dsh down, which is exactly what 0.1.7-alpha.1 did to
+ * this plugin. A child `ctx.inject()` fiber is the version-tolerant form: it is
+ * not a loader entry, so a wait that never resolves costs nothing.
+ */
+const SCOPE_PROVIDERS: { services: string[]; bind: (ctx: any) => any }[] = [
+  // dsh >= 0.1.7
+  { services: ["configForms"], bind: (ctx) => ctx.configForms.get(NAMESPACE) },
+  // dsh <= 0.1.6
+  {
+    services: ["settingsScope", "connection", "remote"],
+    bind: (ctx) => ctx.settingsScope.bind({ namespace: NAMESPACE }),
+  },
+];
+
+export const inject = ["slots"];
 
 export function apply(ctx: any) {
-  const scope = ctx.settingsScope.bind({ namespace: NAMESPACE });
+  // A release providing both faces at once would otherwise mount two cards into
+  // one slot cell, the second silently replacing the first. First one wins.
+  let claimed = false;
 
+  for (const provider of SCOPE_PROVIDERS) {
+    ctx.inject(provider.services, (sctx: any) => {
+      if (claimed) return;
+      claimed = true;
+      mountCard(sctx, provider.bind(sctx));
+    });
+  }
+
+  // A dsh generation providing neither face leaves the plugin silently
+  // unconfigurable, which reads as "the plugin is broken". Say so once.
+  const timer = setTimeout(() => {
+    if (claimed) return;
+    console.warn(
+      `[${NAMESPACE}] no settings service found: this dsh provides none of ${SCOPE_PROVIDERS.map((p) => p.services[0]).join(", ")}.` +
+        ` Keys can still be set in the profile's cordis.patch.yml; please report this at https://github.com/MochiNek0/dsh-web-search-free/issues`,
+    );
+  }, 5000);
+  ctx.effect(() => () => clearTimeout(timer));
+}
+
+/**
+ * Put the card in the best slot this dsh declares, and keep it there.
+ * @param ctx - the settings-service fiber the card's registrations belong to.
+ * @param scope - the bound settings face, whichever generation supplied it.
+ */
+function mountCard(ctx: any, scope: any) {
   // Which candidates the host currently declares, and which one is mounted.
   // A host that declares two of them at once (an overlap release) must still
   // show exactly one card, so the arbiter always keeps the best one alone.
@@ -474,6 +549,8 @@ function WebSearchFreeCard({
   // the button silently dead. An in-page arm behaves the same everywhere and
   // needs no UI primitive from the host.
   const [armed, setArmed] = React.useState(false);
+  // Feedback for the legacy-migration copy button.
+  const [copied, setCopied] = React.useState(false);
   const [failed, setFailed] = React.useState("");
 
   // Let go of the arm if the user walks away from it.
@@ -644,6 +721,84 @@ function WebSearchFreeCard({
         t("intro"),
       ),
     );
+    // Nothing saved here yet. That is either a fresh install or an upgrade
+    // whose section dsh's one-shot import left behind, and the card cannot tell
+    // which (reading the harness home is the Host half's business, and it logs
+    // the accurate version of this on startup). So the copy is written to be
+    // true either way: it asks rather than asserts, and costs a first-time user
+    // one line they can ignore.
+    if (!configured) {
+      children.push(
+        React.createElement(
+          "div",
+          {
+            key: "legacy",
+            style: {
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: 8,
+              fontSize: 12,
+              lineHeight: 1.6,
+              background: "var(--dsw-alias-fill-tertiary)",
+              color: "var(--dsw-alias-label-secondary)",
+            },
+          },
+          React.createElement(
+            "div",
+            { style: { fontWeight: 600 } },
+            t("legacy.title"),
+          ),
+          React.createElement("div", null, t("legacy.body")),
+          React.createElement(
+            "code",
+            {
+              style: {
+                display: "block",
+                padding: "8px 10px",
+                borderRadius: 6,
+                background: "var(--dsw-alias-fill-secondary)",
+                color: "var(--dsw-alias-label-primary)",
+                fontSize: 11,
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                userSelect: "text",
+              },
+            },
+            t("legacy.prompt"),
+          ),
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              style: {
+                alignSelf: "flex-start",
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid var(--dsw-alias-border-secondary)",
+                background: "transparent",
+                color: "inherit",
+                fontSize: 12,
+                cursor: "pointer",
+              },
+              // Best effort: an embedded webview may withhold the clipboard, and
+              // the instruction is selectable above either way, so a rejection
+              // needs no error surface of its own.
+              onClick: () => {
+                void Promise.resolve(
+                  navigator.clipboard?.writeText(t("legacy.prompt")),
+                )
+                  .then(() => setCopied(true))
+                  .catch(() => {});
+              },
+            },
+            copied ? t("legacy.copied") : t("legacy.copy"),
+          ),
+        ),
+      );
+    }
     // web_fetch on/off — a top-level switch above the engine list. Search is
     // always on. The Host half owns tool-web's mount, so this genuinely adds and
     // removes the tool from the model's catalog; the copy below can say so.
