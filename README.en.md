@@ -29,17 +29,17 @@ This plugin calls each engine's retrieval endpoint directly (Tavily `/search`, E
 
 ## Supported engines
 
-| Engine         | Search | Fetch | Result date | Free tier                                                  | Get an API key                                    |
-| -------------- | :----: | :---: | :---------: | ---------------------------------------------------------- | ------------------------------------------------- |
-| TinyFish       |   ✓    |   ✓   |   partial   | Search & fetch free (rate-limited only)                    | <https://www.tinyfish.ai/pricing>                 |
-| AnySearch      |   ✓    |   ✓   |      ✗      | 1,000 calls/day (resets daily)                             | <https://anysearch.com/pricing>                   |
-| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                       |
-| Tavily         |   ✓    |   ✓   |      ✗      | 1,000 credits/month (resets monthly)                       | <https://app.tavily.com/>                         |
-| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                      |
-| Serping API    |   ✓    |   ✗   |   partial   | 1,000 calls/month (resets monthly, no card)                | <https://serpingapi.com/signup>                   |
-| Brave Search   |   ✓    |   ✗   |  **most**   | $5 credit/month (card required, not charged)               | <https://api-dashboard.search.brave.com/register> |
-| SerpApi        |   ✓    |   ✗   |    weak     | 250 calls/month (resets monthly)                           | <https://serpapi.com/users/sign_up>               |
-| Jina AI        |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time, no reset)               | <https://jina.ai/api-key>                         |
+| Engine         | Search | Fetch | Result date | Free tier                                                  | Get an API key                                          |
+| -------------- | :----: | :---: | :---------: | ---------------------------------------------------------- | ------------------------------------------------------- |
+| TinyFish       |   ✓    |   ✓   |   partial   | Search & fetch free (rate-limited only)                    | <https://www.tinyfish.ai/pricing>                       |
+| AnySearch      |   ✓    |   ✓   |      ✗      | 1,000 calls/day (resets daily)                             | <https://anysearch.com/pricing>                         |
+| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                             |
+| Tavily         |   ✓    |   ✓   |      ✗      | 1,000 credits/month (resets monthly)                       | <https://app.tavily.com/>                               |
+| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                            |
+| Serping API    |   ✓    |   ✗   |   partial   | 1,000 free searches per account (one-time, no card)        | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
+| Brave Search   |   ✓    |   ✗   |  **most**   | $5 credit/month (card required, not charged)               | <https://api-dashboard.search.brave.com/register>       |
+| SerpApi        |   ✓    |   ✗   |    weak     | 250 calls/month (resets monthly)                           | <https://serpapi.com/users/sign_up>                     |
+| Jina AI        |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time, no reset)               | <https://jina.ai/api-key>                               |
 
 The table order is the default call order (largest sustainable free tier first). Two things to note:
 
@@ -52,7 +52,8 @@ The table order is the default call order (largest sustainable free tier first).
 - **Jina**: one-time tokens — 10M on a new key, `s.jina.ai` charging a flat 10k per search (≈1,000 searches). Once spent you top up or rotate the key; it never resets.
 - **Exa**: rolling credit — $20 on signup plus $10/month, never zeroed (≈1,400 basic searches).
 - **AnySearch**: resets daily, 1,000 calls/day (≈30k/month).
-- **Tavily / Firecrawl / Serping API / SerpApi / Brave**: reset monthly.
+- **Serping API**: one-time — 1,000 free searches per account, no card; it never resets. Paid plans start at $25/month for 10,000 searches.
+- **Tavily / Firecrawl / SerpApi / Brave**: reset monthly.
 - **TinyFish**: search and fetch are free outright, limited only by rate (free tier: Search 30 req/min, Fetch 150 url/min).
 
 </details>

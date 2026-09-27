@@ -29,17 +29,17 @@
 
 ## 支持的引擎
 
-| 引擎           | 搜索 | 抓取 | 结果日期 | 免费额度                                           | 获取 API Key                                      |
-| -------------- | :--: | :--: | :------: | -------------------------------------------------- | ------------------------------------------------- |
-| TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）                        | <https://www.tinyfish.ai/pricing>                 |
-| AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）                            | <https://anysearch.com/pricing>                   |
-| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                       |
-| Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                         |
-| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                      |
-| Serping API    |  ✓   |  ✗   |   部分   | 1,000 次/月（每月重置，无需绑卡）                  | <https://serpingapi.com/signup>                   |
-| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register> |
-| SerpApi        |  ✓   |  ✗   |   弱     | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>               |
-| Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                         |
+| 引擎           | 搜索 | 抓取 | 结果日期 | 免费额度                                           | 获取 API Key                                            |
+| -------------- | :--: | :--: | :------: | -------------------------------------------------- | ------------------------------------------------------- |
+| TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）                        | <https://www.tinyfish.ai/pricing>                       |
+| AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）                            | <https://anysearch.com/pricing>                         |
+| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                             |
+| Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                               |
+| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                            |
+| Serping API    |  ✓   |  ✗   |   部分   | 每个账号 1,000 次（一次性，无需绑卡）              | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
+| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register>       |
+| SerpApi        |  ✓   |  ✗   |    弱    | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>                     |
+| Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                               |
 
 表格顺序即默认调用顺序（按可持续免费量从大到小排）。两点要注意：
 
@@ -52,7 +52,8 @@
 - **Jina**：一次性 token，新 key 送 10M，`s.jina.ai` 每次固定扣 1 万，约够 1,000 次搜索，用完只能充值或换 key，不重置。
 - **Exa**：可累积 credit，注册送 $20 + 每月补 $10，余额不清零，约能跑 1,400 次基础搜索。
 - **AnySearch**：每日重置，1,000 次/天（约 3 万次/月）。
-- **Tavily / Firecrawl / Serping API / SerpApi / Brave**：每月重置。
+- **Serping API**：一次性额度，每个账号 1,000 次，无需绑卡，用完不重置；付费套餐 $25/月起（10,000 次/月）。
+- **Tavily / Firecrawl / SerpApi / Brave**：每月重置。
 - **TinyFish**：搜索/抓取完全免费，只卡速率（免费层 Search 30 req/min、Fetch 150 url/min）。
 
 </details>
