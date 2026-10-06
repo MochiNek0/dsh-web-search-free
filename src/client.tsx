@@ -125,7 +125,14 @@ type AdvancedField =
       def: string | number;
       numeric?: boolean;
     }
-  | { field: string; kind: "number"; min: number; max: number; def: number }
+  | {
+      field: string;
+      kind: "number";
+      min: number;
+      max: number;
+      step: number;
+      def: number;
+    }
   | { field: string; kind: "domains"; def: string }
   | { field: string; kind: "toggle"; def: boolean };
 
@@ -163,7 +170,14 @@ const ADVANCED: AdvancedField[] = [
   },
   { field: "blockedDomains", kind: "domains", def: "" },
   { field: "preferredDomains", kind: "domains", def: "" },
-  { field: "snippetLength", kind: "number", min: 100, max: 1000, def: 300 },
+  {
+    field: "snippetLength",
+    kind: "number",
+    min: 100,
+    max: 1000,
+    step: 50,
+    def: 300,
+  },
   {
     field: "tavilySearchDepth",
     kind: "select",
@@ -171,6 +185,40 @@ const ADVANCED: AdvancedField[] = [
     def: "basic",
   },
   { field: "keylessJinaFetch", kind: "toggle", def: true },
+  { field: "cacheMinutes", kind: "number", min: 0, max: 60, step: 5, def: 10 },
+];
+
+/**
+ * One-click starting points for the advanced fields. A preset only fills the
+ * drafts — nothing is stored until Save — and touches only the fields it
+ * names, so two can be combined (a language preset plus a quality one).
+ * `reset` puts every advanced field back to its default.
+ */
+const PRESETS: { id: string; patch: Record<string, unknown> }[] = [
+  {
+    id: "saver",
+    patch: {
+      searchStrategy: "fallback",
+      tavilySearchDepth: "basic",
+      snippetLength: 300,
+      cacheMinutes: 30,
+    },
+  },
+  { id: "speed", patch: { searchStrategy: "race", parallelEngines: 2 } },
+  {
+    id: "quality",
+    patch: {
+      searchStrategy: "merge",
+      parallelEngines: 2,
+      tavilySearchDepth: "advanced",
+      snippetLength: 500,
+    },
+  },
+  { id: "chinese", patch: { region: "CN", language: "zh-CN" } },
+  {
+    id: "reset",
+    patch: Object.fromEntries(ADVANCED.map((spec) => [spec.field, spec.def])),
+  },
 ];
 
 /**
@@ -261,6 +309,17 @@ const zh = {
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
   "adv.label": "高级设置",
+  "preset.label": "快捷预设",
+  "preset.hint":
+    "预设只改下面对应的选项，点保存才生效；可以叠加，比如「中文优先」+「质量优先」。",
+  "preset.saver": "省额度",
+  "preset.speed": "速度优先",
+  "preset.quality": "质量优先",
+  "preset.chinese": "中文优先",
+  "preset.reset": "恢复默认",
+  "adv.cacheMinutes": "缓存时长（分钟）",
+  "adv.cacheMinutes.hint":
+    "相同的搜索或抓取在这段时间内直接返回上次的结果，不消耗额度。0 为关闭。只存在内存里，重启即清空。",
   "adv.searchStrategy": "搜索策略",
   "adv.searchStrategy.hint":
     "逐个 fallback 最省额度；并发取最快会同时调用前 N 个引擎，用最先返回的；并发合并会同时调用前 N 个引擎并合并去重，结果最全，但每次搜索消耗 N 个引擎的额度。",
@@ -375,6 +434,17 @@ const en: Record<keyof typeof zh, string> = {
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
   "adv.label": "Advanced",
+  "preset.label": "Presets",
+  "preset.hint":
+    "A preset only changes the fields it covers, and nothing applies until you Save. They combine — e.g. Chinese first + Best quality.",
+  "preset.saver": "Save quota",
+  "preset.speed": "Fastest",
+  "preset.quality": "Best quality",
+  "preset.chinese": "Chinese first",
+  "preset.reset": "Reset to defaults",
+  "adv.cacheMinutes": "Cache (minutes)",
+  "adv.cacheMinutes.hint":
+    "An identical search or fetch within this window returns the previous result without using quota. 0 turns it off. Memory only; cleared on restart.",
   "adv.searchStrategy": "Search strategy",
   "adv.searchStrategy.hint":
     "Fallback tries one engine at a time and uses the least quota. Race queries the first N engines at once and takes the fastest. Merge queries the first N engines at once and fuses their results — the best coverage, at N engines' quota per search.",
@@ -1498,7 +1568,7 @@ function WebSearchFreeCard({
           type: "number",
           min: spec.min,
           max: spec.max,
-          step: 50,
+          step: spec.step,
           disabled,
           value: String(value),
           onChange: (e: any) => setDraft(e.target.value),
@@ -1629,6 +1699,68 @@ function WebSearchFreeCard({
                   background: "var(--dsw-alias-bg-layer-3)",
                 },
               },
+              React.createElement(
+                "div",
+                {
+                  key: "presets",
+                  style: { display: "flex", flexDirection: "column", gap: 6 },
+                },
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 13,
+                    },
+                  },
+                  React.createElement(
+                    "span",
+                    {
+                      style: {
+                        color: "var(--dsw-alias-label-primary)",
+                        fontWeight: 500,
+                        marginRight: 4,
+                      },
+                    },
+                    t("preset.label"),
+                  ),
+                  ...PRESETS.map((preset) =>
+                    React.createElement(
+                      "button",
+                      {
+                        key: preset.id,
+                        type: "button",
+                        disabled,
+                        onClick: () =>
+                          setAdvDrafts({ ...advDrafts, ...preset.patch }),
+                        style: {
+                          ...btnOutlineStyle,
+                          fontSize: 12,
+                          padding: "3px 10px",
+                          borderRadius: 999,
+                          ...roundCorners,
+                          ...(disabled ? { opacity: 0.4, cursor: "default" } : {}),
+                        },
+                      },
+                      t(`preset.${preset.id}` as TKey),
+                    ),
+                  ),
+                ),
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      color: "var(--dsw-alias-label-tertiary)",
+                    },
+                  },
+                  t("preset.hint"),
+                ),
+              ),
               ...advancedRows.map(advancedRow),
             )
           : null,

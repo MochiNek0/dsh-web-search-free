@@ -7,6 +7,7 @@ import { availableProviders } from './providers/index.js'
 import { ProviderError } from './providers/fields.js'
 import { WebSearchProvider as MyProvider, SearchOptions, SearchResult } from './types.js'
 import { finalizeSources, matchesDomain, mergeResults, parseDomains } from './results.js'
+import { TtlCache } from './cache.js'
 
 export const name = 'web-search-free'
 export const inject = ['web']
@@ -62,6 +63,8 @@ export interface Config {
   tavilySearchDepth?: 'basic' | 'advanced'
   /** Fall back to Jina Reader without a key (rate-limited) when every keyed fetch fails. */
   keylessJinaFetch?: boolean
+  /** Minutes an identical search or fetch is answered from memory; 0 turns caching off. */
+  cacheMinutes?: number
 }
 
 /**
@@ -130,6 +133,8 @@ const configFields = () => ({
     .description('Tavily 搜索深度：advanced 结果更相关，但每次消耗 2 credits。'),
   keylessJinaFetch: Schema.boolean().default(true)
     .description('所有带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（有速率限制）。没配抓取引擎时它就是唯一的抓取通道。'),
+  cacheMinutes: Schema.natural().max(60).default(10)
+    .description('相同的搜索或抓取在这么多分钟内直接返回缓存，不再消耗额度。0 为关闭。缓存只在内存里，重启即清空。'),
 })
 
 /**
@@ -326,6 +331,30 @@ function attemptSignal(parent: AbortSignal | undefined, ms: number, label: strin
   }
 }
 
+/** At most this many per-attempt reasons go into an all-failed error. */
+const MAX_REPORTED_FAILURES = 6
+
+/**
+ * The error thrown when every attempt failed. It lists each attempt's reason
+ * rather than only the last one: "tavily: 429, exa: timeout, brave: 401"
+ * tells the user which key to look at, where the last error alone points at
+ * whichever engine happened to be tried last.
+ */
+function chainFailure(kind: 'search' | 'fetch', trail: readonly string[]): Error {
+  if (trail.length === 0) return new Error(`All configured ${kind} providers failed.`)
+  const shown = trail.slice(0, MAX_REPORTED_FAILURES)
+  const more = trail.length - shown.length
+  return new Error(
+    `All configured ${kind} providers failed (${trail.length} attempt${trail.length === 1 ? '' : 's'}): ` +
+      shown.join('; ') +
+      (more > 0 ? `; and ${more} more` : ''),
+  )
+}
+
+/** Cache capacities: search results are small; fetched pages can run to 200k characters each. */
+const SEARCH_CACHE_ENTRIES = 200
+const FETCH_CACHE_ENTRIES = 30
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     web: any
@@ -444,7 +473,8 @@ export function apply(ctx: Context, config: RawConfig) {
 
   /**
    * Run one attempt under its own timeout. A failure benches the key when
-   * {@link cooldownFor} says so, is logged, and is rethrown — except when
+   * {@link cooldownFor} says so, is logged, is added to `trail` for the
+   * all-failed error, and is rethrown — except when
    * `signal` was aborted (the caller, or a won race, giving up), which is
    * rethrown quietly, neither logged nor benched.
    */
@@ -453,6 +483,7 @@ export function apply(ctx: Context, config: RawConfig) {
     { provider, key }: Attempt,
     signal: AbortSignal | undefined,
     attempt: (provider: MyProvider, key: string, signal: AbortSignal) => Promise<T>,
+    trail?: string[],
   ): Promise<T> {
     if (signal?.aborted) throw signal.reason ?? new Error(`web ${kind} aborted`)
     const scoped = attemptSignal(signal, ATTEMPT_TIMEOUT_MS[kind], `${provider.name} ${kind}`)
@@ -466,7 +497,9 @@ export function apply(ctx: Context, config: RawConfig) {
       const cooldown = cooldownFor(err, kind)
       if (cooldown !== undefined) benchedUntil.set(`${provider.name}:${key}`, Date.now() + cooldown)
       const benchNote = cooldown !== undefined ? ` Benched for ${Math.round(cooldown / 60_000)} min.` : ''
-      logger.warn?.(`${who} ${kind} failed: ${String(err?.message).replace(/\.$/, '')}.${benchNote}`)
+      const reason = String(err?.message).replace(/\.$/, '')
+      logger.warn?.(`${who} ${kind} failed: ${reason}.${benchNote}`)
+      trail?.push(`${provider.name} (${key ? maskKey(key) : 'keyless'}): ${reason}`)
       throw err
     } finally {
       scoped.dispose()
@@ -480,6 +513,8 @@ export function apply(ctx: Context, config: RawConfig) {
    * @param weak - optional: returns true for a result that is usable but
    *   suspect. A weak result does not end the walk; the first one is
    *   returned only if no later attempt produces a non-weak result.
+   * @param trail - failure reasons collected so far (a parallel search's
+   *   leads); this walk appends to it.
    */
   async function runChain<T>(
     kind: 'search' | 'fetch',
@@ -487,22 +522,21 @@ export function apply(ctx: Context, config: RawConfig) {
     signal: AbortSignal | undefined,
     attempt: (provider: MyProvider, key: string, signal: AbortSignal) => Promise<T>,
     weak?: (result: T) => boolean,
+    trail: string[] = [],
   ): Promise<T> {
-    let lastError: Error | null = null
     let fallback: T | undefined
     for (const a of attempts) {
       try {
-        const result = await tryAttempt(kind, a, signal, attempt)
+        const result = await tryAttempt(kind, a, signal, attempt, trail)
         if (!weak?.(result)) return result
         fallback ??= result
         logger.warn?.(`Provider ${a.provider.name} ${kind} returned a suspiciously short result. Trying next key/provider...`)
       } catch (err: any) {
         if (signal?.aborted) throw err
-        lastError = err
       }
     }
     if (fallback !== undefined) return fallback
-    throw new Error(`All configured ${kind} providers failed. Last error: ${lastError?.message}`)
+    throw chainFailure(kind, trail)
   }
 
   /**
@@ -528,7 +562,8 @@ export function apply(ctx: Context, config: RawConfig) {
     // A child of the caller's signal: aborting it cancels a race's losers
     // without touching the caller, and a caller abort still reaches them all.
     const group = attemptSignal(signal, ATTEMPT_TIMEOUT_MS.search, 'parallel search')
-    const runs = leads.map((a) => tryAttempt('search', a, group.signal, attempt))
+    const trail: string[] = []
+    const runs = leads.map((a) => tryAttempt('search', a, group.signal, attempt, trail))
     try {
       if (mode === 'race') {
         try {
@@ -548,8 +583,12 @@ export function apply(ctx: Context, config: RawConfig) {
       for (const run of runs) run.catch(() => {})
     }
     if (signal?.aborted) throw signal.reason ?? new Error('web search aborted')
-    return runChain('search', rest, signal, attempt)
+    return runChain('search', rest, signal, attempt, undefined, trail)
   }
+
+  const searchCache = new TtlCache<{ content: string; sources: SearchResult['sources'] }>(SEARCH_CACHE_ENTRIES)
+  const fetchCache = new TtlCache<{ content: string; truncated: boolean }>(FETCH_CACHE_ENTRIES)
+  const cacheTtl = (current: Config) => Math.max(0, current.cacheMinutes ?? 10) * 60_000
 
   /** The per-search options every provider gets, from the live config. */
   function searchOptions(current: Config, maxResults: number | undefined): SearchOptions {
@@ -580,6 +619,22 @@ export function apply(ctx: Context, config: RawConfig) {
       }
       const options = searchOptions(current, request.maxResults)
       const blocked = options.excludeDomains ?? []
+      const strategy = current.searchStrategy ?? 'fallback'
+      const width = Math.min(4, Math.max(2, current.parallelEngines ?? 2))
+      const preferred = parseDomains(current.preferredDomains)
+      const snippetLength = current.snippetLength ?? 300
+
+      // Everything that shapes the answer is in the key, so changing a
+      // setting never serves a result produced under the old one. Engines go
+      // in by configured order, not by `attempts`, whose order shifts as keys
+      // are benched.
+      const cacheKey = JSON.stringify([
+        request.query, getActiveProviders('search').map((a) => a.provider.name),
+        strategy, width, options, preferred, snippetLength,
+      ])
+      const cached = searchCache.get(cacheKey)
+      if (cached) return { content: cached.content, sources: [...(cached.sources ?? [])], truncated: false }
+
       // Blocked domains are filtered per attempt, not after the fact: an
       // engine whose every hit was blocked has found nothing, and under
       // `fallback` that must hand over to the next engine.
@@ -592,21 +647,16 @@ export function apply(ctx: Context, config: RawConfig) {
         return { ...result, sources }
       }
 
-      const strategy = current.searchStrategy ?? 'fallback'
-      const width = Math.min(4, Math.max(2, current.parallelEngines ?? 2))
       const result = strategy === 'race' || strategy === 'merge'
         ? await runParallel(strategy, width, attempts, signal, attempt)
         : await runChain('search', attempts, signal, attempt)
 
-      return {
+      const answer = {
         content: result.content || '',
-        sources: finalizeSources(
-          result.sources ?? [],
-          parseDomains(current.preferredDomains),
-          current.snippetLength ?? 300,
-        ),
-        truncated: false,
+        sources: finalizeSources(result.sources ?? [], preferred, snippetLength),
       }
+      searchCache.set(cacheKey, answer, cacheTtl(current))
+      return { ...answer, sources: [...answer.sources], truncated: false }
     }
   }))
 
@@ -622,17 +672,22 @@ export function apply(ctx: Context, config: RawConfig) {
         (getActiveProviders('fetch').length > 0 || keylessFetchAttempt(current).length > 0)
     },
     async fetch(request: any, signal: any) {
-      const attempts = [...orderedAttempts('fetch'), ...keylessFetchAttempt(resolved())]
+      const current = resolved()
+      const attempts = [...orderedAttempts('fetch'), ...keylessFetchAttempt(current)]
       if (attempts.length === 0) {
         throw new Error('No web fetch providers configured. Please set at least one API key in config.')
       }
-      const result = await runChain(
+      const weak = (r: { content: string }) => r.content.trim().length < MIN_FETCH_CHARS
+      const result = fetchCache.get(request.url) ?? await runChain(
         'fetch',
         attempts,
         signal,
         (provider, key, scoped) => provider.fetch(request.url, key, scoped),
-        (r) => r.content.trim().length < MIN_FETCH_CHARS,
+        weak,
       )
+      // A weak result is the chain's last resort, not a good copy: leave it
+      // out so the next fetch of this URL tries again.
+      if (!weak(result)) fetchCache.set(request.url, result, cacheTtl(current))
       // Propagate the provider-reported truncation instead of a hardcoded
       // false: the official `dsh-tool-web` seam ORs this with its own
       // `fetchMaxOutputChars` cap and any source-character cut, so the
