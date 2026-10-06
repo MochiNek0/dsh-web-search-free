@@ -109,6 +109,24 @@ Engines come in two groups: **call order** holds the ones with a saved key — t
 
 **Configure at least one engine's key**, otherwise search fails with `No web search providers configured.`
 
+### Advanced settings
+
+The **Advanced** section at the bottom of the card is collapsed by default. Every field has a working default, so you never have to open it:
+
+| Setting | Field | What it does |
+| --- | --- | --- |
+| Search strategy | `searchStrategy` | `fallback` (default) tries one engine at a time and uses the least quota; `race` queries the first N engines at once and takes the fastest; `merge` queries the first N engines at once and fuses their results (a page several engines found ranks higher) — the best coverage, at N engines' quota per search |
+| Engines queried at once | `parallelEngines` | 2–4, default 2; only used by `race` / `merge` |
+| Region / language | `region` / `language` | Default `auto`. Support varies: Brave, SerpApi and Serping API take both; Tavily and Exa take region only; TinyFish and AnySearch take both but document them loosely, so a rejection retries without them; Firecrawl and Jina take neither |
+| Time range | `freshness` | `any` (default) / `day` / `week` / `month` / `year`, applied to every search. Not supported by AnySearch or Jina |
+| Blocked domains | `blockedDomains` | One per line; subdomains too. Tavily, Exa and TinyFish exclude them in the request, the other engines' results are filtered; if every result from an engine is blocked, the next engine is tried |
+| Preferred domains | `preferredDomains` | One per line; results from these domains move to the top, nothing is removed |
+| Snippet length | `snippetLength` | 100–1000, default 300; every engine's snippets are cut to this length |
+| Tavily search depth | `tavilySearchDepth` | `basic` (default, 1 credit) / `advanced` (2 credits) |
+| Keyless fetch fallback | `keylessJinaFetch` | On by default: when every keyed fetch fails, fall back to Jina Reader without a key (20 requests/min; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch |
+
+Each (engine, key) attempt also has its own time limit (10 s for search, 20 s for fetch) before the next one is tried, and a key that returns 401/402/429 is moved to the back of the chain for a while (2 minutes for 429, 30 minutes otherwise) — the log says `Benched for N min`.
+
 ### When the card is nowhere to be found
 
 dsh's plugin configuration surface is still moving fast, and the slot the card occupies has been renamed more than once. The plugin knows every slot name that has existed so far, but if your dsh is newer than the plugin and the slot changed again, the card will not appear — the browser console then carries one line, `[web-search-free] no settings card mounted: …`, listing the plugin-related slots your dsh does declare. **Please paste that line into an issue.**
@@ -124,9 +142,13 @@ You do not have to wait for a release: **every setting can be written straight i
       key-2
     enableFetch: true
     providerOrder: [tavily, exa, tinyfish]
+    searchStrategy: merge
+    region: CN
+    blockedDomains: |-
+      example-content-farm.com
 ```
 
-The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply.
+The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`, plus the fields in the Advanced table above. Restart dsh to apply.
 
 How this relates to the card depends on the dsh version: on dsh >= 0.1.7 the card writes to *this very file* — same layer, so saving from the card overwrites the fields you hand-wrote here. On dsh <= 0.1.6 the card writes a separate settings document (`~/.dsh/settings.yaml`) whose values form the user layer and override the base values set here.
 

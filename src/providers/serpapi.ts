@@ -1,5 +1,5 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toPublishedAt } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, assertOk, googleCountry, googleLanguage, googleTbs, toPublishedAt } from './fields.js';
 
 export const serpapiProvider: WebSearchProvider = {
   name: 'serpapi',
@@ -20,24 +20,32 @@ export const serpapiProvider: WebSearchProvider = {
    * prints as-is. That is coarser than a parsed date but still signals
    * recency, so it is read rather than dropped.
    */
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult> {
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
     const url = new URL('https://serpapi.com/search');
     url.searchParams.set('engine', 'google');
     url.searchParams.set('q', query);
     url.searchParams.set('api_key', apiKey);
+    // Google's own parameters, passed through by SerpApi. No result count:
+    // Google dropped `num`, so the seam's cap is applied after the fact.
+    const gl = googleCountry(options?.region);
+    const hl = googleLanguage(options?.language);
+    const tbs = googleTbs(options?.freshness);
+    if (gl) url.searchParams.set('gl', gl);
+    if (hl) url.searchParams.set('hl', hl);
+    if (tbs) url.searchParams.set('tbs', tbs);
     // `num` is unreliable now (Google removed &num=100 support and SerpApi's
     // own Light Fast workaround was capped), so it is not set. The default page
     // size is what Google returns, which is enough for a search.
     const res = await fetch(url, { method: 'GET', signal });
-    if (!res.ok) throw new Error(`SerpApi search failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'SerpApi search');
     const data = await res.json();
     // A top-level `error` string can appear even on 200; SerpApi's async path
     // also reports status through `search_metadata.status`.
     if (typeof data?.error === 'string' && data.error.length > 0) {
-      throw new Error(`SerpApi search failed: ${data.error}`);
+      throw new ProviderError(`SerpApi search failed: ${data.error}`);
     }
     const entries: any[] = Array.isArray(data?.organic_results) ? data.organic_results : [];
-    if (entries.length === 0) throw new Error('SerpApi search returned no results.');
+    if (entries.length === 0) throw new ProviderError('SerpApi search returned no results.');
 
     const sources = entries
       .map((r: any) => {
@@ -54,7 +62,7 @@ export const serpapiProvider: WebSearchProvider = {
       })
       .filter((s): s is NonNullable<typeof s> => s !== undefined);
 
-    if (sources.length === 0) throw new Error('SerpApi search returned no parsable results.');
+    if (sources.length === 0) throw new ProviderError('SerpApi search returned no parsable results.');
     return { content: '', sources };
   },
 

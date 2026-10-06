@@ -1,5 +1,5 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toSnippet } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, assertOk, clampCount, isParamRejection, toSnippet } from './fields.js';
 
 /** AnySearch caps extracted text at this length; a body of exactly this length reads as truncated. */
 const EXTRACT_MAX_CHARACTERS = 50000;
@@ -21,24 +21,37 @@ export const anysearchProvider: WebSearchProvider = {
    *
    * No date field exists in AnySearch's API, so `publishedAt` is never set.
    */
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult> {
-    const res = await fetch('https://api.anysearch.com/v1/search', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify({ query, max_results: 10 }),
-      signal,
-    });
-    if (!res.ok) throw new Error(`AnySearch search failed: ${res.status} ${res.statusText}`);
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
+    // `zone` is `cn` or `intl`; `language` is documented by example only
+    // (`zh-CN`, `en`), so other languages are not sent, and a 400 retries
+    // once without either. No time or domain filters exist.
+    const zone = options?.region ? (options.region === 'CN' ? 'cn' : 'intl') : undefined;
+    const language = options?.language === 'zh-CN' || options?.language === 'en' ? options.language : undefined;
+    const post = (withLocale: boolean) =>
+      fetch('https://api.anysearch.com/v1/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          query,
+          max_results: clampCount(options?.maxResults, 10) ?? 10,
+          ...(withLocale && zone ? { zone } : {}),
+          ...(withLocale && language ? { language } : {}),
+        }),
+        signal,
+      });
+    let res = await post(true);
+    if ((zone || language) && isParamRejection(res)) res = await post(false);
+    assertOk(res, 'AnySearch search');
     const data = await res.json();
     if (typeof data?.code !== 'number' || data.code !== 0) {
       const msg = typeof data?.message === 'string' && data.message.length > 0 ? data.message : `code=${data?.code}`;
-      throw new Error(`AnySearch search failed: ${msg}`);
+      throw new ProviderError(`AnySearch search failed: ${msg}`);
     }
     const entries: any[] = Array.isArray(data?.data?.results) ? data.data.results : [];
-    if (entries.length === 0) throw new Error('AnySearch search returned no results.');
+    if (entries.length === 0) throw new ProviderError('AnySearch search returned no results.');
 
     const sources = entries
       .map((r: any) => {
@@ -55,7 +68,7 @@ export const anysearchProvider: WebSearchProvider = {
       })
       .filter((s): s is NonNullable<typeof s> => s !== undefined);
 
-    if (sources.length === 0) throw new Error('AnySearch search returned no parsable results.');
+    if (sources.length === 0) throw new ProviderError('AnySearch search returned no parsable results.');
     return { content: '', sources };
   },
 
@@ -74,15 +87,16 @@ export const anysearchProvider: WebSearchProvider = {
       body: JSON.stringify({ url }),
       signal,
     });
-    if (!res.ok) throw new Error(`AnySearch extract failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'AnySearch extract');
     const data = await res.json();
     if (typeof data?.code !== 'number' || data.code !== 0) {
       const msg = typeof data?.message === 'string' && data.message.length > 0 ? data.message : `code=${data?.code}`;
-      throw new Error(`AnySearch extract failed: ${msg}`);
+      throw new ProviderError(`AnySearch extract failed: ${msg}`);
     }
     const text: string = typeof data?.data?.content === 'string' ? data.data.content : '';
+    if (text.trim() === '') throw new ProviderError('AnySearch extract returned no content.');
     return {
-      content: text || 'No content found.',
+      content: text,
       truncated: text.length >= EXTRACT_MAX_CHARACTERS,
     };
   },

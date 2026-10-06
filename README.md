@@ -109,6 +109,24 @@ pnpm 对本地目录默认以链接方式安装，所以之后重新 `pnpm build
 
 **至少配置一个引擎的 Key**，否则搜索会报 `No web search providers configured.`
 
+### 高级设置
+
+卡片底部的 **「高级设置」** 默认收起，每项都有可用的默认值，不打开也能正常用：
+
+| 设置 | 字段 | 说明 |
+| --- | --- | --- |
+| 搜索策略 | `searchStrategy` | `fallback`（默认）逐个尝试，最省额度；`race` 同时调用前 N 个引擎，用最快返回的；`merge` 同时调用前 N 个引擎并合并去重（同一页面被多个引擎命中会排到前面），结果最全，但每次搜索消耗 N 个引擎的额度 |
+| 同时调用的引擎数 | `parallelEngines` | 2–4，默认 2，只对 `race` / `merge` 生效 |
+| 结果地区 / 语言 | `region` / `language` | 默认 `auto`。各引擎支持程度不同：Brave、SerpApi、Serping API 地区和语言都支持；Tavily、Exa 只支持地区；TinyFish、AnySearch 支持但文档不全，被拒时自动去掉这两个参数重试；Firecrawl、Jina 不支持 |
+| 时间范围 | `freshness` | `any`（默认）/ `day` / `week` / `month` / `year`，作用于所有搜索。AnySearch、Jina 不支持 |
+| 屏蔽域名 | `blockedDomains` | 每行一个，子域名一并屏蔽。Tavily、Exa、TinyFish 在请求时就排除，其余引擎在结果里过滤；某个引擎的结果全被屏蔽时换下一个 |
+| 优先域名 | `preferredDomains` | 每行一个，来自这些域名的结果排到最前，不排除其他结果 |
+| 摘要长度 | `snippetLength` | 100–1000，默认 300。所有引擎统一裁到这个长度 |
+| Tavily 搜索深度 | `tavilySearchDepth` | `basic`（默认，1 credit）/ `advanced`（2 credits） |
+| 无 Key 抓取兜底 | `keylessJinaFetch` | 默认开启：带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（20 次/分钟，URL 会发给 Jina）。没配任何抓取引擎时它就是唯一的抓取通道 |
+
+另外，插件对每个 (引擎, Key) 单独限时（搜索 10 秒、抓取 20 秒），超时就换下一个；返回 401/402/429 的 Key 会被暂时排到最后（429 两分钟，其余 30 分钟），日志里会写 `Benched for N min`。
+
 ### 找不到配置卡片时
 
 dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不止一次。插件同时认识历史上出现过的几个插槽，但如果你的 dsh 比本插件更新、插槽又改名了，卡片就不会出现——这时浏览器控制台会打印一行 `[web-search-free] no settings card mounted: …`，附上这版 dsh 实际声明的插槽名，**欢迎把这行贴到 issue 里**。
@@ -124,9 +142,13 @@ dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不�
       key-2
     enableFetch: true
     providerOrder: [tavily, exa, tinyfish]
+    searchStrategy: merge
+    region: CN
+    blockedDomains: |-
+      example-content-farm.com
 ```
 
-字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`。写完重启 dsh 生效。
+字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`，以及上面「高级设置」表里的字段。写完重启 dsh 生效。
 
 这里和卡片的关系随 dsh 版本而变：dsh ≥ 0.1.7 的卡片**就是往这个文件写**，两者是同一层，在卡片里保存会覆盖你手写的同名字段；dsh ≤ 0.1.6 的卡片写的是另一份设置文档（`~/.dsh/settings.yaml`），那边的值属于用户层，会盖住这里的 base 值。
 

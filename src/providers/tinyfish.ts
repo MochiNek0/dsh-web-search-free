@@ -1,5 +1,5 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toPublishedAt } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, assertOk, freshnessMinutes, isParamRejection, toPublishedAt } from './fields.js';
 
 /**
  * Search and Fetch live on *different subdomains* (`api.search.tinyfish.ai` vs
@@ -22,18 +22,29 @@ export const tinyfishProvider: WebSearchProvider = {
    * is absent from the OpenAPI required list, so a miss is normal and yields
    * `undefined` — the seam drops absent optional fields.
    */
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult> {
-    const url = new URL('https://api.search.tinyfish.ai');
-    url.searchParams.set('query', query);
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: { 'X-API-Key': apiKey },
-      signal,
-    });
-    if (!res.ok) throw new Error(`TinyFish search failed: ${res.status} ${res.statusText}`);
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
+    // `location` is a documented country code. `language` is documented only
+    // by example (`en`, `fr`), so it gets the bare primary subtag, and a 400
+    // retries once without either rather than failing the search.
+    const location = options?.region;
+    const language = options?.language?.split('-')[0];
+    const minutes = freshnessMinutes(options?.freshness);
+    const exclude = options?.excludeDomains ?? [];
+    const get = (withLocale: boolean) => {
+      const url = new URL('https://api.search.tinyfish.ai');
+      url.searchParams.set('query', query);
+      if (withLocale && location) url.searchParams.set('location', location);
+      if (withLocale && language) url.searchParams.set('language', language);
+      if (minutes !== undefined) url.searchParams.set('recency_minutes', String(minutes));
+      if (exclude.length > 0) url.searchParams.set('exclude_domains', exclude.join(','));
+      return fetch(url, { method: 'GET', headers: { 'X-API-Key': apiKey }, signal });
+    };
+    let res = await get(true);
+    if ((location || language) && isParamRejection(res)) res = await get(false);
+    assertOk(res, 'TinyFish search');
     const data = await res.json();
     const entries: any[] = Array.isArray(data?.results) ? data.results : [];
-    if (entries.length === 0) throw new Error('TinyFish search returned no results.');
+    if (entries.length === 0) throw new ProviderError('TinyFish search returned no results.');
 
     const sources = entries
       .map((r: any) => {
@@ -50,7 +61,7 @@ export const tinyfishProvider: WebSearchProvider = {
       })
       .filter((s): s is NonNullable<typeof s> => s !== undefined);
 
-    if (sources.length === 0) throw new Error('TinyFish search returned no parsable results.');
+    if (sources.length === 0) throw new ProviderError('TinyFish search returned no parsable results.');
     return { content: '', sources };
   },
 
@@ -70,7 +81,7 @@ export const tinyfishProvider: WebSearchProvider = {
       body: JSON.stringify({ urls: [url], format: 'markdown' }),
       signal,
     });
-    if (!res.ok) throw new Error(`TinyFish fetch failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'TinyFish fetch');
     const data = await res.json();
     const first = Array.isArray(data?.results) && data.results.length > 0 ? data.results[0] : null;
     if (first && typeof first.text === 'string' && first.text.length > 0) {
@@ -81,7 +92,7 @@ export const tinyfishProvider: WebSearchProvider = {
     // A per-URL failure lands in `errors[]` alongside an empty `results[]`;
     // surface the API's own reason if it gave one, otherwise a generic message.
     const errEntry = Array.isArray(data?.errors) ? data.errors.find((e: any) => e?.url === url) : null;
-    const reason = typeof errEntry?.error === 'string' ? errEntry.error : 'No content found.';
-    return { content: reason, truncated: false };
+    const reason = typeof errEntry?.error === 'string' ? `: ${errEntry.error}` : '.';
+    throw new ProviderError(`TinyFish fetch returned no content${reason}`);
   },
 };

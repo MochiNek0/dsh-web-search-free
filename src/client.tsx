@@ -111,6 +111,83 @@ const parseKeys = (raw: string): string[] =>
 /** Canonical storage form: one key per line, no blanks, trimmed. */
 const normalizeKeys = (raw: string): string => parseKeys(raw).join("\n");
 
+/**
+ * The "Advanced" fields, mirroring the Host half's Config one for one (names,
+ * option lists and defaults must match `src/index.ts`). Labels and hints live
+ * in the dictionaries as `adv.<field>` / `adv.<field>.hint`, option labels as
+ * `opt.<field>.<value>` — except `numeric` selects, whose options print as-is.
+ */
+type AdvancedField =
+  | {
+      field: string;
+      kind: "select";
+      options: readonly string[];
+      def: string | number;
+      numeric?: boolean;
+    }
+  | { field: string; kind: "number"; min: number; max: number; def: number }
+  | { field: string; kind: "domains"; def: string }
+  | { field: string; kind: "toggle"; def: boolean };
+
+const ADVANCED: AdvancedField[] = [
+  {
+    field: "searchStrategy",
+    kind: "select",
+    options: ["fallback", "race", "merge"],
+    def: "fallback",
+  },
+  {
+    field: "parallelEngines",
+    kind: "select",
+    options: ["2", "3", "4"],
+    def: 2,
+    numeric: true,
+  },
+  {
+    field: "region",
+    kind: "select",
+    options: ["auto", "CN", "HK", "TW", "SG", "JP", "KR", "US", "GB"],
+    def: "auto",
+  },
+  {
+    field: "language",
+    kind: "select",
+    options: ["auto", "zh-CN", "zh-TW", "en", "ja", "ko"],
+    def: "auto",
+  },
+  {
+    field: "freshness",
+    kind: "select",
+    options: ["any", "day", "week", "month", "year"],
+    def: "any",
+  },
+  { field: "blockedDomains", kind: "domains", def: "" },
+  { field: "preferredDomains", kind: "domains", def: "" },
+  { field: "snippetLength", kind: "number", min: 100, max: 1000, def: 300 },
+  {
+    field: "tavilySearchDepth",
+    kind: "select",
+    options: ["basic", "advanced"],
+    def: "basic",
+  },
+  { field: "keylessJinaFetch", kind: "toggle", def: true },
+];
+
+/**
+ * Bring a draft into the stored shape: numbers clamped to their range (an
+ * emptied number box falls back to the default), domain lists normalized to
+ * one trimmed entry per line, like the key fields.
+ */
+const coerceAdvanced = (spec: AdvancedField, raw: unknown): unknown => {
+  if (spec.kind === "number") {
+    const n = Math.round(Number(raw));
+    if (raw === "" || !Number.isFinite(n)) return spec.def;
+    return Math.min(spec.max, Math.max(spec.min, n));
+  }
+  if (spec.kind === "domains") return normalizeKeys(String(raw ?? ""));
+  return raw;
+};
+
 /** The two languages dsh ships; `LocaleSnapshot.active` is one of these. */
 type Lang = "zh" | "en";
 
@@ -183,6 +260,59 @@ const zh = {
   "free.brave": "$5 额度/月（需绑卡）",
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
+  "adv.label": "高级设置",
+  "adv.searchStrategy": "搜索策略",
+  "adv.searchStrategy.hint":
+    "逐个 fallback 最省额度；并发取最快会同时调用前 N 个引擎，用最先返回的；并发合并会同时调用前 N 个引擎并合并去重，结果最全，但每次搜索消耗 N 个引擎的额度。",
+  "opt.searchStrategy.fallback": "逐个 fallback（默认）",
+  "opt.searchStrategy.race": "并发取最快",
+  "opt.searchStrategy.merge": "并发合并结果",
+  "adv.parallelEngines": "同时调用的引擎数",
+  "adv.parallelEngines.hint": "取「调用顺序」里排在最前的 N 个引擎。",
+  "adv.region": "结果地区",
+  "adv.region.hint": "只对支持地区参数的引擎生效，其余引擎忽略。",
+  "opt.region.auto": "自动（引擎默认）",
+  "opt.region.CN": "中国大陆",
+  "opt.region.HK": "中国香港",
+  "opt.region.TW": "中国台湾",
+  "opt.region.SG": "新加坡",
+  "opt.region.JP": "日本",
+  "opt.region.KR": "韩国",
+  "opt.region.US": "美国",
+  "opt.region.GB": "英国",
+  "adv.language": "结果语言",
+  "adv.language.hint": "只对支持语言参数的引擎生效，其余引擎忽略。",
+  "opt.language.auto": "自动（引擎默认）",
+  "opt.language.zh-CN": "简体中文",
+  "opt.language.zh-TW": "繁体中文",
+  "opt.language.en": "English",
+  "opt.language.ja": "日本語",
+  "opt.language.ko": "한국어",
+  "adv.freshness": "时间范围",
+  "adv.freshness.hint":
+    "作用于所有搜索，只对支持时间过滤的引擎生效。主要搜新闻、动态时再开。",
+  "opt.freshness.any": "不限",
+  "opt.freshness.day": "一天内",
+  "opt.freshness.week": "一周内",
+  "opt.freshness.month": "一个月内",
+  "opt.freshness.year": "一年内",
+  "adv.blockedDomains": "屏蔽域名",
+  "adv.blockedDomains.hint":
+    "每行一个，子域名一并屏蔽，可直接粘贴网址。某个引擎的结果全被屏蔽时，会换下一个引擎。",
+  "adv.preferredDomains": "优先域名",
+  "adv.preferredDomains.hint":
+    "每行一个：来自这些域名的结果排到最前，其他结果照常保留。",
+  "adv.domains.placeholder": "每行一个域名，例如 example.com",
+  "adv.snippetLength": "摘要长度",
+  "adv.snippetLength.hint":
+    "每条结果给模型看的摘要字符数（100–1000）。越长信息越多，也越费 token。",
+  "adv.tavilySearchDepth": "Tavily 搜索深度",
+  "adv.tavilySearchDepth.hint": "advanced 结果更相关，但每次消耗 2 credits。",
+  "opt.tavilySearchDepth.basic": "basic（1 credit）",
+  "opt.tavilySearchDepth.advanced": "advanced（2 credits）",
+  "adv.keylessJinaFetch": "无 Key 抓取兜底",
+  "adv.keylessJinaFetch.hint":
+    "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）。没配任何抓取引擎时，它就是唯一的抓取通道。",
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -244,6 +374,61 @@ const en: Record<keyof typeof zh, string> = {
   "free.brave": "$5 credit/month (card required)",
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
+  "adv.label": "Advanced",
+  "adv.searchStrategy": "Search strategy",
+  "adv.searchStrategy.hint":
+    "Fallback tries one engine at a time and uses the least quota. Race queries the first N engines at once and takes the fastest. Merge queries the first N engines at once and fuses their results — the best coverage, at N engines' quota per search.",
+  "opt.searchStrategy.fallback": "Fallback (default)",
+  "opt.searchStrategy.race": "Race: fastest wins",
+  "opt.searchStrategy.merge": "Merge results",
+  "adv.parallelEngines": "Engines queried at once",
+  "adv.parallelEngines.hint": "The first N engines in the call order.",
+  "adv.region": "Region",
+  "adv.region.hint": "Applied by engines that take a region; others ignore it.",
+  "opt.region.auto": "Auto (engine default)",
+  "opt.region.CN": "Mainland China",
+  "opt.region.HK": "Hong Kong",
+  "opt.region.TW": "Taiwan",
+  "opt.region.SG": "Singapore",
+  "opt.region.JP": "Japan",
+  "opt.region.KR": "South Korea",
+  "opt.region.US": "United States",
+  "opt.region.GB": "United Kingdom",
+  "adv.language": "Language",
+  "adv.language.hint":
+    "Applied by engines that take a language; others ignore it.",
+  "opt.language.auto": "Auto (engine default)",
+  "opt.language.zh-CN": "Simplified Chinese",
+  "opt.language.zh-TW": "Traditional Chinese",
+  "opt.language.en": "English",
+  "opt.language.ja": "Japanese",
+  "opt.language.ko": "Korean",
+  "adv.freshness": "Time range",
+  "adv.freshness.hint":
+    "Applies to every search, on engines that support a time filter. Worth turning on only if you mostly search news.",
+  "opt.freshness.any": "Any time",
+  "opt.freshness.day": "Past day",
+  "opt.freshness.week": "Past week",
+  "opt.freshness.month": "Past month",
+  "opt.freshness.year": "Past year",
+  "adv.blockedDomains": "Blocked domains",
+  "adv.blockedDomains.hint":
+    "One per line; subdomains are blocked too, and pasted URLs work. If every result from an engine is blocked, the next engine is tried.",
+  "adv.preferredDomains": "Preferred domains",
+  "adv.preferredDomains.hint":
+    "One per line: results from these domains move to the top; the rest stay.",
+  "adv.domains.placeholder": "One domain per line, e.g. example.com",
+  "adv.snippetLength": "Snippet length",
+  "adv.snippetLength.hint":
+    "Characters of snippet the model sees per result (100–1000). Longer means more context and more tokens.",
+  "adv.tavilySearchDepth": "Tavily search depth",
+  "adv.tavilySearchDepth.hint":
+    "Advanced returns more relevant results but costs 2 credits per search.",
+  "opt.tavilySearchDepth.basic": "basic (1 credit)",
+  "opt.tavilySearchDepth.advanced": "advanced (2 credits)",
+  "adv.keylessJinaFetch": "Keyless fetch fallback",
+  "adv.keylessJinaFetch.hint":
+    "When every keyed fetch fails, fall back to Jina Reader without a key (rate-limited; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch.",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { zh, en };
@@ -471,6 +656,8 @@ type Snapshot = {
     serpingapiApiKey?: string;
     enableFetch?: boolean;
     providerOrder?: string[];
+    /** The {@link ADVANCED} fields, read through `storedAdvanced`. */
+    [field: string]: unknown;
   };
   /**
    * The raw user layer, as opposed to `value`'s base+user resolution. Only this
@@ -531,6 +718,10 @@ function WebSearchFreeCard({
   const [enableFetchDraft, setEnableFetchDraft] = React.useState<
     boolean | null
   >(null);
+  const [advDrafts, setAdvDrafts] = React.useState<Record<string, unknown>>(
+    {},
+  );
+  const [advOpen, setAdvOpen] = React.useState(false);
   const [dragKey, setDragKey] = React.useState<string | null>(null);
   const [dropTarget, setDropTarget] = React.useState<string | null>(null);
   // Which row, if any, has its drag armed. Rows are NOT permanently
@@ -584,6 +775,20 @@ function WebSearchFreeCard({
     snapshot.value?.enableFetch !== false;
   const enableFetch = enableFetchDraft ?? storedEnableFetch();
 
+  // Every advanced field has a schema default, and `value` may or may not
+  // carry it depending on the host generation, so a missing value IS the
+  // default.
+  const storedAdvanced = (spec: AdvancedField): unknown =>
+    snapshot.value?.[spec.field] ?? spec.def;
+  const advancedValue = (spec: AdvancedField): unknown =>
+    spec.field in advDrafts ? advDrafts[spec.field] : storedAdvanced(spec);
+  const advDirty = ADVANCED.filter(
+    (spec) =>
+      spec.field in advDrafts &&
+      JSON.stringify(coerceAdvanced(spec, advDrafts[spec.field])) !==
+        JSON.stringify(storedAdvanced(spec)),
+  );
+
   const keyDirty = PROVIDERS.filter(
     (p) =>
       p.field in keyDrafts &&
@@ -594,7 +799,11 @@ function WebSearchFreeCard({
     JSON.stringify(orderDraft) !== JSON.stringify(storedOrder());
   const enableFetchDirty =
     enableFetchDraft !== null && enableFetchDraft !== storedEnableFetch();
-  const dirty = keyDirty.length > 0 || orderDirty || enableFetchDirty;
+  const dirty =
+    keyDirty.length > 0 ||
+    orderDirty ||
+    enableFetchDirty ||
+    advDirty.length > 0;
   const disabled = saving || clearing || snapshot.writable === false;
   // Anything to erase? Read the user layer, not the resolved value: the latter
   // always carries the schema defaults and would report "configured" forever.
@@ -625,6 +834,17 @@ function WebSearchFreeCard({
       await scope.set("providerOrder", orderDraft);
     if (enableFetchDirty && enableFetchDraft !== null)
       await scope.set("enableFetch", enableFetchDraft);
+    // A value equal to its default is unset rather than written, so the
+    // profile file only ever lists what the user actually changed.
+    const advPending = advDirty.map((spec) => ({
+      spec,
+      value: coerceAdvanced(spec, advDrafts[spec.field]),
+    }));
+    for (const { spec, value } of advPending) {
+      if (JSON.stringify(value) === JSON.stringify(spec.def))
+        await scope.unset(spec.field);
+      else await scope.set(spec.field, value);
+    }
     // Writes swallow wire and revision failures and reload instead of throwing,
     // so the Host's readback is the only authority on what actually landed.
     const after = scope.getSnapshot();
@@ -647,7 +867,22 @@ function WebSearchFreeCard({
     );
     if (!orderLanded) setOrderDraft(null);
     if (!enableFetchLanded) setEnableFetchDraft(null);
-    if (rejectedKeys.length > 0 || !orderLanded || !enableFetchLanded)
+    const rejectedAdv = advPending.filter(
+      ({ spec, value }) =>
+        JSON.stringify(after.value?.[spec.field] ?? spec.def) !==
+        JSON.stringify(value),
+    );
+    setAdvDrafts(
+      Object.fromEntries(
+        rejectedAdv.map(({ spec, value }) => [spec.field, value]),
+      ),
+    );
+    if (
+      rejectedKeys.length > 0 ||
+      !orderLanded ||
+      !enableFetchLanded ||
+      rejectedAdv.length > 0
+    )
       setFailed(t("error.save"));
     setSaving(false);
   };
@@ -672,6 +907,7 @@ function WebSearchFreeCard({
       ...PROVIDERS.map((p) => p.field),
       "providerOrder",
       "enableFetch",
+      ...ADVANCED.map((spec) => spec.field),
     ]) {
       await scope.unset(field);
     }
@@ -680,6 +916,7 @@ function WebSearchFreeCard({
     setKeyDrafts({});
     setOrderDraft(null);
     setEnableFetchDraft(null);
+    setAdvDrafts({});
     const after = scope.getSnapshot();
     const leftover = PROVIDERS.filter((p) => {
       const value =
@@ -828,45 +1065,8 @@ function WebSearchFreeCard({
           },
           t("fetch.label"),
         ),
-        React.createElement(
-          "button",
-          {
-            type: "button",
-            role: "switch",
-            "aria-checked": enableFetch,
-            disabled,
-            onClick: () => setEnableFetchDraft(!enableFetch),
-            style: {
-              appearance: "none",
-              flex: "none",
-              width: 36,
-              height: 20,
-              borderRadius: 999,
-              ...roundCorners,
-              border: "none",
-              cursor: disabled ? "default" : "pointer",
-              padding: 0,
-              position: "relative",
-              background: enableFetch
-                ? "var(--dsw-alias-brand-primary)"
-                : "var(--dsw-alias-bg-module-platform)",
-              transition: "background .16s",
-            },
-          },
-          React.createElement("span", {
-            style: {
-              position: "absolute",
-              top: 2,
-              left: enableFetch ? 18 : 2,
-              width: 16,
-              height: 16,
-              borderRadius: "50%",
-              ...roundCorners,
-              background: "#fff",
-              transition: "left .16s",
-              boxShadow: "0 1px 3px rgba(0,0,0,.2)",
-            },
-          }),
+        toggleSwitch(enableFetch, disabled, () =>
+          setEnableFetchDraft(!enableFetch),
         ),
       ),
       React.createElement(
@@ -1248,6 +1448,192 @@ function WebSearchFreeCard({
         ),
       );
     }
+    // Group 3 — Advanced. Collapsed by default: every field has a working
+    // default and most users never need to open it.
+    const advancedRow = (spec: AdvancedField) => {
+      const value = advancedValue(spec);
+      const id = `web-search-free-${spec.field}`;
+      const setDraft = (next: unknown) =>
+        setAdvDrafts({ ...advDrafts, [spec.field]: next });
+      const label = React.createElement(
+        "label",
+        {
+          htmlFor: id,
+          style: {
+            flex: 1,
+            minWidth: 0,
+            color: "var(--dsw-alias-label-primary)",
+            fontWeight: 500,
+          },
+        },
+        t(`adv.${spec.field}` as TKey),
+      );
+      let control: React.ReactNode;
+      if (spec.kind === "select") {
+        control = React.createElement(
+          "select",
+          {
+            id,
+            disabled,
+            value: String(value),
+            onChange: (e: any) =>
+              setDraft(
+                spec.numeric ? Number(e.target.value) : e.target.value,
+              ),
+            style: { ...inputStyle, height: 30, padding: "0 8px" },
+          },
+          ...spec.options.map((option) =>
+            React.createElement(
+              "option",
+              { key: option, value: option },
+              spec.numeric
+                ? option
+                : t(`opt.${spec.field}.${option}` as TKey),
+            ),
+          ),
+        );
+      } else if (spec.kind === "number") {
+        control = React.createElement("input", {
+          id,
+          type: "number",
+          min: spec.min,
+          max: spec.max,
+          step: 50,
+          disabled,
+          value: String(value),
+          onChange: (e: any) => setDraft(e.target.value),
+          style: { ...inputStyle, height: 30, width: 96 },
+        });
+      } else if (spec.kind === "toggle") {
+        control = toggleSwitch(value !== false, disabled, () =>
+          setDraft(value === false),
+        );
+      }
+      const hint = React.createElement(
+        "div",
+        {
+          style: {
+            fontSize: 11,
+            lineHeight: 1.6,
+            color: "var(--dsw-alias-label-tertiary)",
+          },
+        },
+        t(`adv.${spec.field}.hint` as TKey),
+      );
+      if (spec.kind === "domains")
+        return React.createElement(
+          "div",
+          {
+            key: spec.field,
+            style: { display: "flex", flexDirection: "column", gap: 4 },
+          },
+          label,
+          React.createElement("textarea", {
+            id,
+            rows: 2,
+            spellCheck: false,
+            disabled,
+            value: String(value ?? ""),
+            placeholder: t("adv.domains.placeholder"),
+            onChange: (e: any) => setDraft(e.target.value),
+            style: {
+              ...inputStyle,
+              width: "100%",
+              boxSizing: "border-box",
+              height: "auto",
+              minHeight: 30,
+              resize: "vertical",
+              padding: "6px 12px",
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              lineHeight: "20px",
+            },
+          }),
+          hint,
+        );
+      return React.createElement(
+        "div",
+        {
+          key: spec.field,
+          style: { display: "flex", flexDirection: "column", gap: 4 },
+        },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              fontSize: 13,
+            },
+          },
+          label,
+          control,
+        ),
+        hint,
+      );
+    };
+    // The engine count only matters to the two parallel strategies.
+    const strategy = advancedValue(ADVANCED[0]);
+    const advancedRows = ADVANCED.filter(
+      (spec) => spec.field !== "parallelEngines" || strategy !== "fallback",
+    );
+    children.push(
+      React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setAdvOpen(!advOpen),
+            style: {
+              ...groupLabelStyle,
+              appearance: "none",
+              background: "none",
+              border: 0,
+              padding: 0,
+              font: "inherit",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+              textAlign: "left",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            },
+          },
+          t("adv.label"),
+          React.createElement(
+            "span",
+            {
+              style: {
+                display: "inline-flex",
+                transition: "transform .16s",
+                transform: advOpen ? "rotate(180deg)" : "none",
+              },
+            },
+            caret(11),
+          ),
+        ),
+        advOpen
+          ? React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                  borderRadius: 8,
+                  padding: "12px",
+                  border: "1px solid var(--dsw-alias-border-l2)",
+                  background: "var(--dsw-alias-bg-layer-3)",
+                },
+              },
+              ...advancedRows.map(advancedRow),
+            )
+          : null,
+      ),
+    );
     children.push(
       React.createElement(
         "div",
@@ -1310,6 +1696,7 @@ function WebSearchFreeCard({
               setKeyDrafts({});
               setOrderDraft(null);
               setEnableFetchDraft(null);
+              setAdvDrafts({});
               setArmed(false);
               setFailed("");
             },
@@ -1567,6 +1954,50 @@ const groupLabelStyle = {
   letterSpacing: ".2px",
   color: "var(--dsw-alias-label-tertiary)",
 };
+
+/** The on/off switch shared by every boolean in this card. */
+function toggleSwitch(on: boolean, disabled: boolean, onClick: () => void) {
+  return React.createElement(
+    "button",
+    {
+      type: "button",
+      role: "switch",
+      "aria-checked": on,
+      disabled,
+      onClick,
+      style: {
+        appearance: "none",
+        flex: "none",
+        width: 36,
+        height: 20,
+        borderRadius: 999,
+        ...roundCorners,
+        border: "none",
+        cursor: disabled ? "default" : "pointer",
+        padding: 0,
+        position: "relative",
+        background: on
+          ? "var(--dsw-alias-brand-primary)"
+          : "var(--dsw-alias-bg-module-platform)",
+        transition: "background .16s",
+      },
+    },
+    React.createElement("span", {
+      style: {
+        position: "absolute",
+        top: 2,
+        left: on ? 18 : 2,
+        width: 16,
+        height: 16,
+        borderRadius: "50%",
+        ...roundCorners,
+        background: "#fff",
+        transition: "left .16s",
+        boxShadow: "0 1px 3px rgba(0,0,0,.2)",
+      },
+    }),
+  );
+}
 
 /** The single chevron used by every expander in this card. */
 function caret(size: number) {
