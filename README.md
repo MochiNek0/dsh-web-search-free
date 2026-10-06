@@ -33,15 +33,15 @@
 | -------------- | :--: | :--: | :------: | -------------------------------------------------- | ------------------------------------------------------- |
 | TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）                        | <https://www.tinyfish.ai/pricing>                       |
 | AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）                            | <https://anysearch.com/pricing>                         |
-| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                             |
 | Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                               |
-| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                            |
-| Serping API    |  ✓   |  ✗   |   部分   | 每个账号 1,000 次（一次性，无需绑卡）              | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 | Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register>       |
+| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                             |
+| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                            |
 | SerpApi        |  ✓   |  ✗   |    弱    | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>                     |
 | Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                               |
+| Serping API    |  ✓   |  ✗   |   部分   | 每个账号 1,000 次（一次性，无需绑卡）              | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 
-表格顺序即默认调用顺序（按可持续免费量从大到小排）。两点要注意：
+表格顺序即默认调用顺序：按**每月可持续免费次数**从大到小排（不限量 > 每日重置 > 每月重置 > 一次性额度），额度相当时按**易用性**排（无需注册/绑卡的优先）——所以 Tavily 排在同为约 1,000 次/月但需绑卡的 Brave 前面，一次性额度里免注册即可拿 Key 的 Jina 排在需注册的 Serping API 前面。两点要注意：
 
 - **抓取**：Brave、Serping API、SerpApi 是纯 SERP，没有 URL 抓取端点，只进搜索链。如果只配了这三家，抓取链为空，会报 `No web fetch providers configured.`——请再给一个支持抓取的引擎配上 Key。
 - **结果日期**：`publishedAt` 决定模型能否判断结果的时效性，各家差别很大。Brave 最全（实测 18/20），Exa、Jina、TinyFish、Serping API、SerpApi 部分带；Tavily 的 `published_date` 仅在 `topic: 'news'` 下返回，本插件走通用搜索因此为空；Firecrawl 和 AnySearch 没有这个字段。在意时效性可以把 Brave 往前挪，代价是丢掉 Tavily 的直接回答段和较长摘录。

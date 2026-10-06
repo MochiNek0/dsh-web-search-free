@@ -16,6 +16,10 @@ const PACKAGE_NAME = "dsh-web-search-free";
 
 /**
  * All backends the host half knows about; the order here is the default fallback.
+ * Sorted by sustainable free volume (searches per month: unlimited, then daily,
+ * then monthly resets, one-time grants last), ties broken by ease of signup —
+ * no card, no account beats either. Keep `providerOrder`'s default and
+ * `availableProviders` in the Host half in the same order.
  *
  * The free-tier hint shown under each engine is NOT stored here: it is copy, so
  * it lives in the dictionaries below under `free.<key>`, keyed by `key`. Keep it
@@ -49,17 +53,24 @@ const PROVIDERS: ProviderMeta[] = [
     caps: { search: true, fetch: true },
   },
   {
-    key: "exa",
-    field: "exaApiKey",
-    label: "Exa (Metaphor)",
-    signup: "https://dashboard.exa.ai/",
-    caps: { search: true, fetch: true },
-  },
-  {
     key: "tavily",
     field: "tavilyApiKey",
     label: "Tavily",
     signup: "https://app.tavily.com/",
+    caps: { search: true, fetch: true },
+  },
+  {
+    key: "brave",
+    field: "braveApiKey",
+    label: "Brave Search",
+    signup: "https://api-dashboard.search.brave.com/register",
+    caps: { search: true },
+  },
+  {
+    key: "exa",
+    field: "exaApiKey",
+    label: "Exa (Metaphor)",
+    signup: "https://dashboard.exa.ai/",
     caps: { search: true, fetch: true },
   },
   {
@@ -68,20 +79,6 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Firecrawl",
     signup: "https://www.firecrawl.dev/",
     caps: { search: true, fetch: true },
-  },
-  {
-    key: "serpingapi",
-    field: "serpingapiApiKey",
-    label: "Serping API",
-    signup: "https://serpingapi.com/signup?ref=dsh-web-search-free",
-    caps: { search: true },
-  },
-  {
-    key: "brave",
-    field: "braveApiKey",
-    label: "Brave Search",
-    signup: "https://api-dashboard.search.brave.com/register",
-    caps: { search: true },
   },
   {
     key: "serpapi",
@@ -96,6 +93,13 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Jina AI",
     signup: "https://jina.ai/api-key",
     caps: { search: true, fetch: true },
+  },
+  {
+    key: "serpingapi",
+    field: "serpingapiApiKey",
+    label: "Serping API",
+    signup: "https://serpingapi.com/signup?ref=dsh-web-search-free",
+    caps: { search: true },
   },
 ];
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key);
@@ -353,11 +357,11 @@ const zh = {
   "header.engines": "{count} 引擎",
   "free.tinyfish": "搜索/抓取免费",
   "free.anysearch": "1000 次/天（每日重置）",
-  "free.exa": "$10 credit/月（累积不清零）",
+  "free.exa": "$10 credit/月（约 700 次，累积不清零）",
   "free.tavily": "1000 credits/月",
-  "free.firecrawl": "1000 credits/月",
+  "free.firecrawl": "1000 credits/月（约 500 次）",
   "free.serpingapi": "1000 次（一次性，无需绑卡）",
-  "free.brave": "$5 额度/月（需绑卡）",
+  "free.brave": "$5 额度/月（约 1000 次，需绑卡）",
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
   "adv.label": "高级设置",
@@ -498,11 +502,11 @@ const en: Record<keyof typeof zh, string> = {
   "header.engines": "{count} engine(s)",
   "free.tinyfish": "Search & fetch free",
   "free.anysearch": "1000 calls/day (resets daily)",
-  "free.exa": "$10 credit/month (rolls over)",
+  "free.exa": "$10 credit/month (≈700 calls, rolls over)",
   "free.tavily": "1000 credits/month",
-  "free.firecrawl": "1000 credits/month",
+  "free.firecrawl": "1000 credits/month (≈500 calls)",
   "free.serpingapi": "1000 calls (one-time, no card)",
-  "free.brave": "$5 credit/month (card required)",
+  "free.brave": "$5 credit/month (≈1000 calls, card required)",
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
   "adv.label": "Advanced",
@@ -1193,9 +1197,9 @@ function WebSearchFreeCard({
             style: {
               display: "flex",
               flexDirection: "column",
-              gap: 8,
-              padding: "10px 12px",
-              borderRadius: 8,
+              gap: 10,
+              padding: "12px 14px",
+              borderRadius: 10,
               fontSize: 12,
               lineHeight: 1.6,
               background: "var(--dsw-alias-fill-tertiary)",
@@ -1266,39 +1270,50 @@ function WebSearchFreeCard({
           style: {
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 16,
             fontSize: 13,
-            borderRadius: 8,
-            padding: "8px 10px",
+            borderRadius: 10,
+            padding: "12px 14px",
             border: "1px solid var(--dsw-alias-border-l2)",
             background: "var(--dsw-alias-bg-layer-3)",
           },
         },
         React.createElement(
-          "span",
+          "div",
           {
             style: {
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
               flex: 1,
-              color: "var(--dsw-alias-label-primary)",
-              fontWeight: 500,
+              minWidth: 0,
             },
           },
-          t("fetch.label"),
+          React.createElement(
+            "span",
+            {
+              style: {
+                color: "var(--dsw-alias-label-primary)",
+                fontWeight: 500,
+              },
+            },
+            t("fetch.label"),
+          ),
+          React.createElement(
+            "span",
+            {
+              style: {
+                fontSize: 11,
+                lineHeight: 1.5,
+                color: "var(--dsw-alias-label-tertiary)",
+              },
+            },
+            t(enableFetch ? "fetch.on" : "fetch.off"),
+          ),
         ),
         toggleSwitch(enableFetch, disabled, () =>
           setEnableFetchDraft(!enableFetch),
         ),
-      ),
-      React.createElement(
-        "div",
-        {
-          style: {
-            fontSize: 11,
-            color: "var(--dsw-alias-label-tertiary)",
-            marginTop: -4,
-          },
-        },
-        t(enableFetch ? "fetch.on" : "fetch.off"),
       ),
     );
     // Grouping is decided by what is SAVED, never by the drafts: a row that
@@ -1376,10 +1391,10 @@ function WebSearchFreeCard({
           style: {
             display: "flex",
             flexDirection: "column",
-            gap: 6,
+            gap: 10,
             fontSize: 13,
-            borderRadius: 8,
-            padding: "6px 10px",
+            borderRadius: 10,
+            padding: "10px 14px",
             border: isDropTarget
               ? "1px dashed var(--dsw-alias-brand-primary)"
               : "1px solid var(--dsw-alias-border-l2)",
@@ -1392,7 +1407,7 @@ function WebSearchFreeCard({
         // Header line: handle · order badge · label/meta · caret
         React.createElement(
           "div",
-          { style: { display: "flex", alignItems: "center", gap: 8 } },
+          { style: { display: "flex", alignItems: "center", gap: 10 } },
           sortable
             ? React.createElement(
                 "span",
@@ -1438,7 +1453,7 @@ function WebSearchFreeCard({
               style: {
                 display: "flex",
                 flexDirection: "column",
-                gap: 2,
+                gap: 4,
                 flex: 1,
                 minWidth: 0,
                 cursor: disabled ? "default" : "pointer",
@@ -1450,7 +1465,7 @@ function WebSearchFreeCard({
                 style: {
                   display: "flex",
                   alignItems: "center",
-                  gap: 6,
+                  gap: 8,
                   minWidth: 0,
                   flexWrap: "wrap",
                 },
@@ -1483,28 +1498,19 @@ function WebSearchFreeCard({
                 },
                 capsLabel,
               ),
-              React.createElement(
-                "span",
-                {
-                  style: {
-                    whiteSpace: "nowrap",
-                    fontSize: 11,
-                    color: "var(--dsw-alias-label-tertiary)",
-                    flex: "none",
-                  },
-                },
-                t(`free.${provider.key}` as TKey),
-              ),
             ),
+            // Free tier · row status. Kept off the title line, where three
+            // pieces of metadata wrapped into a cramped second line anyway.
             React.createElement(
               "div",
               {
                 style: {
                   fontSize: 11,
+                  lineHeight: 1.5,
                   color: "var(--dsw-alias-label-tertiary)",
                 },
               },
-              status,
+              `${t(`free.${provider.key}` as TKey)} · ${status}`,
             ),
           ),
           React.createElement(
@@ -1532,7 +1538,14 @@ function WebSearchFreeCard({
           ? React.createElement(
               "div",
               {
-                style: { display: "flex", flexDirection: "column", gap: 4 },
+                style: {
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  borderTop: "1px solid var(--dsw-alias-border-l2)",
+                  paddingTop: 12,
+                  marginBottom: 2,
+                },
               },
               React.createElement("textarea", {
                 rows: 2,
@@ -1553,38 +1566,25 @@ function WebSearchFreeCard({
                   height: "auto",
                   minHeight: 30,
                   resize: "vertical",
-                  padding: "6px 12px",
+                  padding: "8px 12px",
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                   lineHeight: "20px",
                 },
               }),
+              // Actions: test on the left (only once there is a key to test),
+              // the signup link pushed to the right.
               React.createElement(
-                "a",
+                "div",
                 {
-                  href: provider.signup,
-                  target: "_blank",
-                  rel: "noreferrer",
-                  onClick: (e: any) => e.stopPropagation(),
                   style: {
-                    fontSize: 12,
-                    color: "var(--dsw-alias-brand-primary)",
-                    textDecoration: "none",
-                    alignSelf: "flex-start",
+                    display: "flex",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: 12,
                   },
                 },
-                t("row.signup"),
-              ),
-              routesOk && keyCount > 0
-                ? React.createElement(
-                    "div",
-                    {
-                      style: {
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 4,
-                      },
-                    },
-                    React.createElement(
+                routesOk && keyCount > 0
+                  ? React.createElement(
                       "button",
                       {
                         type: "button",
@@ -1597,15 +1597,45 @@ function WebSearchFreeCard({
                         style: {
                           ...btnOutlineStyle,
                           fontSize: 12,
-                          padding: "3px 10px",
-                          alignSelf: "flex-start",
+                          padding: "4px 12px",
                           ...(testing[key]
                             ? { opacity: 0.6, cursor: "default" }
                             : {}),
                         },
                       },
                       t(testing[key] ? "test.busy" : "test.button"),
-                    ),
+                    )
+                  : null,
+                React.createElement(
+                  "a",
+                  {
+                    href: provider.signup,
+                    target: "_blank",
+                    rel: "noreferrer",
+                    onClick: (e: any) => e.stopPropagation(),
+                    style: {
+                      fontSize: 12,
+                      color: "var(--dsw-alias-brand-primary)",
+                      textDecoration: "none",
+                      marginLeft: "auto",
+                    },
+                  },
+                  t("row.signup"),
+                ),
+              ),
+              routesOk && keyCount > 0 && (tests[key]?.length ?? 0) > 0
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        padding: "8px 10px",
+                        borderRadius: 8,
+                        background: "var(--dsw-alias-bg-layer-2)",
+                      },
+                    },
                     ...(typeof tests[key] === "string"
                       ? [
                           React.createElement(
@@ -1620,31 +1650,30 @@ function WebSearchFreeCard({
                             tests[key] as string,
                           ),
                         ]
-                      : ((tests[key] as KeyTest[] | undefined) ?? []).map(
-                          (r, i) =>
-                            React.createElement(
-                              "div",
-                              {
-                                key: i,
-                                style: {
-                                  fontSize: 12,
-                                  lineHeight: 1.5,
-                                  wordBreak: "break-word",
-                                  fontFamily:
-                                    "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                  color: r.ok
-                                    ? "var(--dsw-alias-label-secondary)"
-                                    : "var(--dsw-alias-label-error)",
-                                },
+                      : (tests[key] as KeyTest[]).map((r, i) =>
+                          React.createElement(
+                            "div",
+                            {
+                              key: i,
+                              style: {
+                                fontSize: 12,
+                                lineHeight: 1.5,
+                                wordBreak: "break-word",
+                                fontFamily:
+                                  "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                color: r.ok
+                                  ? "var(--dsw-alias-label-secondary)"
+                                  : "var(--dsw-alias-label-error)",
                               },
-                              r.ok
-                                ? t("test.ok", {
-                                    key: r.key,
-                                    count: r.results ?? 0,
-                                    ms: r.ms,
-                                  })
-                                : t("test.fail", { key: r.key, error: r.error }),
-                            ),
+                            },
+                            r.ok
+                              ? t("test.ok", {
+                                  key: r.key,
+                                  count: r.results ?? 0,
+                                  ms: r.ms,
+                                })
+                              : t("test.fail", { key: r.key, error: r.error }),
+                          ),
                         )),
                   )
                 : null,
@@ -1658,7 +1687,7 @@ function WebSearchFreeCard({
     children.push(
       React.createElement(
         "div",
-        { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        { style: { display: "flex", flexDirection: "column", gap: 10 } },
         React.createElement(
           "div",
           { style: groupLabelStyle },
@@ -1669,7 +1698,7 @@ function WebSearchFreeCard({
         chain.length > 0
           ? React.createElement(
               "div",
-              { style: { display: "flex", flexDirection: "column", gap: 6 } },
+              { style: { display: "flex", flexDirection: "column", gap: 8 } },
               ...chain.map((provider, index) =>
                 providerRow(provider, index + 1),
               ),
@@ -1681,8 +1710,8 @@ function WebSearchFreeCard({
                   fontSize: 12,
                   color: "var(--dsw-alias-label-tertiary)",
                   lineHeight: 1.6,
-                  borderRadius: 8,
-                  padding: "10px 12px",
+                  borderRadius: 10,
+                  padding: "14px 16px",
                   border: "1px dashed var(--dsw-alias-border-l2)",
                 },
               },
@@ -1697,7 +1726,7 @@ function WebSearchFreeCard({
       children.push(
         React.createElement(
           "div",
-          { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          { style: { display: "flex", flexDirection: "column", gap: 10 } },
           React.createElement(
             "button",
             {
@@ -1735,7 +1764,7 @@ function WebSearchFreeCard({
           showRest
             ? React.createElement(
                 "div",
-                { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                { style: { display: "flex", flexDirection: "column", gap: 8 } },
                 ...rest.map((provider) => providerRow(provider, null)),
               )
             : null,
@@ -1819,7 +1848,7 @@ function WebSearchFreeCard({
           "div",
           {
             key: spec.field,
-            style: { display: "flex", flexDirection: "column", gap: 4 },
+            style: { display: "flex", flexDirection: "column", gap: 6 },
           },
           label,
           React.createElement("textarea", {
@@ -1848,7 +1877,7 @@ function WebSearchFreeCard({
         "div",
         {
           key: spec.field,
-          style: { display: "flex", flexDirection: "column", gap: 4 },
+          style: { display: "flex", flexDirection: "column", gap: 6 },
         },
         React.createElement(
           "div",
@@ -1856,7 +1885,7 @@ function WebSearchFreeCard({
             style: {
               display: "flex",
               alignItems: "center",
-              gap: 10,
+              gap: 16,
               fontSize: 13,
             },
           },
@@ -1874,7 +1903,7 @@ function WebSearchFreeCard({
     children.push(
       React.createElement(
         "div",
-        { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        { style: { display: "flex", flexDirection: "column", gap: 10 } },
         React.createElement(
           "button",
           {
@@ -1916,9 +1945,9 @@ function WebSearchFreeCard({
                 style: {
                   display: "flex",
                   flexDirection: "column",
-                  gap: 14,
-                  borderRadius: 8,
-                  padding: "12px",
+                  gap: 18,
+                  borderRadius: 10,
+                  padding: "14px 16px",
                   border: "1px solid var(--dsw-alias-border-l2)",
                   background: "var(--dsw-alias-bg-layer-3)",
                 },
@@ -1936,7 +1965,7 @@ function WebSearchFreeCard({
                       display: "flex",
                       flexWrap: "wrap",
                       alignItems: "center",
-                      gap: 6,
+                      gap: 8,
                       fontSize: 13,
                     },
                   },
@@ -2010,9 +2039,9 @@ function WebSearchFreeCard({
           style: {
             display: "flex",
             flexDirection: "column",
-            gap: 2,
-            padding: "8px 10px",
-            borderRadius: 8,
+            gap: 4,
+            padding: "10px 14px",
+            borderRadius: 10,
             border: "1px solid var(--dsw-alias-border-l2)",
             fontSize: 12,
             color: "var(--dsw-alias-label-secondary)",
@@ -2020,7 +2049,14 @@ function WebSearchFreeCard({
         },
         React.createElement(
           "div",
-          { style: { display: "flex", gap: 8, alignItems: "baseline" } },
+          {
+            style: {
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 10,
+              alignItems: "baseline",
+            },
+          },
           React.createElement(
             "span",
             {
@@ -2077,7 +2113,7 @@ function WebSearchFreeCard({
       children.push(
         React.createElement(
           "div",
-          { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          { style: { display: "flex", flexDirection: "column", gap: 10 } },
           React.createElement(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 8 } },
@@ -2139,7 +2175,7 @@ function WebSearchFreeCard({
           statsOpen
             ? React.createElement(
                 "div",
-                { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                { style: { display: "flex", flexDirection: "column", gap: 8 } },
                 statsError
                   ? React.createElement(
                       "div",
@@ -2190,10 +2226,10 @@ function WebSearchFreeCard({
           style: {
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            gap: 10,
             justifyContent: "flex-end",
             borderTop: "1px solid var(--dsw-alias-border-l2)",
-            paddingTop: 12,
+            paddingTop: 16,
           },
         },
         // Left-aligned and outlined, away from 保存: this one is for uninstalling
@@ -2297,7 +2333,7 @@ function WebSearchFreeCard({
         style: {
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          gap: 24,
         },
       },
       ...cardBody(),
@@ -2444,10 +2480,10 @@ function WebSearchFreeCard({
             style: {
               display: "flex",
               flexDirection: "column",
-              gap: 16,
-              margin: "0 16px 4px",
+              gap: 24,
+              margin: "0 16px 16px",
               borderTop: "1px solid var(--dsw-alias-border-l2)",
-              paddingTop: 12,
+              paddingTop: 16,
             },
           },
           ...cardBody(),

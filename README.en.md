@@ -33,15 +33,15 @@ This plugin calls each engine's retrieval endpoint directly (Tavily `/search`, E
 | -------------- | :----: | :---: | :---------: | ---------------------------------------------------------- | ------------------------------------------------------- |
 | TinyFish       |   ✓    |   ✓   |   partial   | Search & fetch free (rate-limited only)                    | <https://www.tinyfish.ai/pricing>                       |
 | AnySearch      |   ✓    |   ✓   |      ✗      | 1,000 calls/day (resets daily)                             | <https://anysearch.com/pricing>                         |
-| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                             |
 | Tavily         |   ✓    |   ✓   |      ✗      | 1,000 credits/month (resets monthly)                       | <https://app.tavily.com/>                               |
-| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                            |
-| Serping API    |   ✓    |   ✗   |   partial   | 1,000 free searches per account (one-time, no card)        | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 | Brave Search   |   ✓    |   ✗   |  **most**   | $5 credit/month (card required, not charged)               | <https://api-dashboard.search.brave.com/register>       |
+| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                             |
+| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                            |
 | SerpApi        |   ✓    |   ✗   |    weak     | 250 calls/month (resets monthly)                           | <https://serpapi.com/users/sign_up>                     |
 | Jina AI        |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time, no reset)               | <https://jina.ai/api-key>                               |
+| Serping API    |   ✓    |   ✗   |   partial   | 1,000 free searches per account (one-time, no card)        | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 
-The table order is the default call order (largest sustainable free tier first). Two things to note:
+The table order is the default call order: **sustainable free calls per month** first (unlimited > daily reset > monthly reset > one-time grants), with ties broken by **ease of signup** (no account / no card wins) — so Tavily sits ahead of Brave (both ≈1,000/month, but Brave needs a card), and among the one-time grants Jina (a key without signing up) sits ahead of Serping API. Two things to note:
 
 - **Fetching**: Brave, Serping API and SerpApi are pure SERP APIs with no URL fetch endpoint, so they only join the search chain. If those three are all you configured, the fetch chain is empty and fails with `No web fetch providers configured.` — add a key for an engine that supports fetching.
 - **Result dates**: `publishedAt` is what lets the model judge how current a result is, and coverage varies a lot. Brave is the most complete (18/20 measured); Exa, Jina, TinyFish, Serping API and SerpApi carry it on some results; Tavily's `published_date` is only returned under `topic: 'news'`, so it is empty here; Firecrawl and AnySearch have no such field. If recency matters, move Brave up the call order — at the cost of Tavily's direct answer and longer excerpts.
