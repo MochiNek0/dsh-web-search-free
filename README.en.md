@@ -109,6 +109,13 @@ Engines come in two groups: **call order** holds the ones with a saved key — t
 
 **Configure at least one engine's key**, otherwise search fails with `No web search providers configured.`
 
+### Testing keys and usage
+
+- Expand an engine's row and click **Test keys**: each key in the box (saved or not) runs one small search, and the card shows per key whether it worked, how many results came back and how long it took — or the engine's own error (such as `401 Unauthorized`). Each key uses one search of quota.
+- **Usage (since start)** at the bottom of the card lists, per engine and key, calls, success rate, average latency, the last error and whether the key is benched, plus cache hits. It lives in memory and resets when dsh restarts.
+
+Both go through dsh's `/api` channel (the same sign-in and origin checks as the Web UI, so other web pages cannot call them) and need a dsh that offers plugin route registration (verified on 0.2.0-rc.2). On older versions the card hides them and everything else works as before.
+
 ### Advanced settings
 
 The **Advanced** section at the bottom of the card is collapsed by default. Every field has a working default, so you never have to open it. The **Presets** at its top (Save quota / Fastest / Best quality / Chinese first / Reset to defaults) fill in the related fields in one click; they combine, and nothing applies until you Save.

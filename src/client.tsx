@@ -112,6 +112,58 @@ const parseKeys = (raw: string): string[] =>
 const normalizeKeys = (raw: string): string => parseKeys(raw).join("\n");
 
 /**
+ * The Host half's card routes (`STATS_ROUTE` / `TEST_ROUTE` in src/index.ts),
+ * written relative so they resolve against the page — dsh may be mounted
+ * below a path prefix. Same-origin, so the browser's dsh session cookie
+ * authenticates them.
+ */
+const STATS_PATH = "api/web-search-free/stats";
+const TEST_PATH = "api/web-search-free/test-keys";
+
+/** A host without the routes (dsh older than its exact-route registry). */
+class RoutesUnavailable extends Error {}
+
+/** Call one card route; a 404 means the host does not serve them at all. */
+async function callRoute(path: string, init?: RequestInit): Promise<any> {
+  const res = await fetch(path, {
+    cache: "no-store",
+    credentials: "same-origin",
+    ...init,
+  });
+  if (res.status === 404) throw new RoutesUnavailable(path);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body?.error || `HTTP ${res.status}`);
+  return body;
+}
+
+type KeyTest = {
+  key: string;
+  ok: boolean;
+  ms: number;
+  results?: number;
+  error?: string;
+};
+type Tally = {
+  calls: number;
+  ok: number;
+  failed: number;
+  totalMs: number;
+  lastError?: string;
+};
+type StatsRow = {
+  engine: string;
+  key: string | null;
+  search: Tally;
+  fetch: Tally;
+  benchedForMs: number;
+};
+type Stats = {
+  since: number;
+  cacheHits: { search: number; fetch: number };
+  rows: StatsRow[];
+};
+
+/**
  * The "Advanced" fields, mirroring the Host half's Config one for one (names,
  * option lists and defaults must match `src/index.ts`). Labels and hints live
  * in the dictionaries as `adv.<field>` / `adv.<field>.hint`, option labels as
@@ -309,6 +361,26 @@ const zh = {
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
   "adv.label": "高级设置",
+  "test.button": "测试 Key",
+  "test.busy": "测试中…",
+  "test.title":
+    "用框里的 Key 各做一次小搜索（没保存也能测），每个 Key 消耗一次搜索额度",
+  "test.ok": "✓ {key} · {count} 条结果 · {ms} ms",
+  "test.fail": "✗ {key} · {error}",
+  "test.error": "测试失败：{error}",
+  "stats.label": "用量统计（本次启动以来）",
+  "stats.refresh": "刷新",
+  "stats.loading": "读取中…",
+  "stats.empty": "还没有配置引擎。",
+  "stats.cache": "缓存命中：搜索 {search} 次 · 抓取 {fetch} 次",
+  "stats.search": "搜索",
+  "stats.fetch": "抓取",
+  "stats.tally": "{ok}/{calls} 成功 · 平均 {avg} ms",
+  "stats.unused": "未调用",
+  "stats.benched": "冷却中 · 还剩 {min} 分钟",
+  "stats.lastError": "最近错误：{error}",
+  "stats.keyless": "无 Key",
+  "stats.error": "读取统计失败：{error}",
   "preset.label": "快捷预设",
   "preset.hint":
     "预设只改下面对应的选项，点保存才生效；可以叠加，比如「中文优先」+「质量优先」。",
@@ -434,6 +506,26 @@ const en: Record<keyof typeof zh, string> = {
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
   "adv.label": "Advanced",
+  "test.button": "Test keys",
+  "test.busy": "Testing…",
+  "test.title":
+    "Run one small search with each key in the box (saved or not); each key uses one search of quota",
+  "test.ok": "✓ {key} · {count} results · {ms} ms",
+  "test.fail": "✗ {key} · {error}",
+  "test.error": "Test failed: {error}",
+  "stats.label": "Usage (since start)",
+  "stats.refresh": "Refresh",
+  "stats.loading": "Loading…",
+  "stats.empty": "No engine configured yet.",
+  "stats.cache": "Cache hits: {search} search · {fetch} fetch",
+  "stats.search": "Search",
+  "stats.fetch": "Fetch",
+  "stats.tally": "{ok}/{calls} succeeded · avg {avg} ms",
+  "stats.unused": "Not called",
+  "stats.benched": "Benched · {min} min left",
+  "stats.lastError": "Last error: {error}",
+  "stats.keyless": "keyless",
+  "stats.error": "Could not load usage: {error}",
   "preset.label": "Presets",
   "preset.hint":
     "A preset only changes the fields it covers, and nothing applies until you Save. They combine — e.g. Chinese first + Best quality.",
@@ -792,6 +884,17 @@ function WebSearchFreeCard({
     {},
   );
   const [advOpen, setAdvOpen] = React.useState(false);
+  // Card routes on the Host half. `null` until the first probe answers;
+  // `false` on a dsh that does not serve them, which hides tests and stats.
+  const [routesOk, setRoutesOk] = React.useState<boolean | null>(null);
+  const [stats, setStats] = React.useState<Stats | null>(null);
+  const [statsError, setStatsError] = React.useState("");
+  const [statsOpen, setStatsOpen] = React.useState(false);
+  const [statsLoading, setStatsLoading] = React.useState(false);
+  const [testing, setTesting] = React.useState<Record<string, boolean>>({});
+  const [tests, setTests] = React.useState<
+    Record<string, KeyTest[] | string>
+  >({});
   const [dragKey, setDragKey] = React.useState<string | null>(null);
   const [dropTarget, setDropTarget] = React.useState<string | null>(null);
   // Which row, if any, has its drag armed. Rows are NOT permanently
@@ -813,6 +916,53 @@ function WebSearchFreeCard({
   // Feedback for the legacy-migration copy button.
   const [copied, setCopied] = React.useState(false);
   const [failed, setFailed] = React.useState("");
+
+  const loadStats = React.useCallback(async () => {
+    setStatsLoading(true);
+    try {
+      setStats(await callRoute(STATS_PATH));
+      setStatsError("");
+      setRoutesOk(true);
+    } catch (err: any) {
+      if (err instanceof RoutesUnavailable) setRoutesOk(false);
+      else setStatsError(String(err?.message ?? err));
+    } finally {
+      setStatsLoading(false);
+    }
+  }, []);
+  // One probe on mount decides whether this dsh serves the routes at all.
+  // The summary view is a single line that never shows either, so it skips it.
+  React.useEffect(() => {
+    if (view !== "summary") void loadStats();
+  }, [loadStats, view]);
+
+  const testKeys = async (provider: ProviderMeta) => {
+    setTesting((s) => ({ ...s, [provider.key]: true }));
+    try {
+      // Test what is in the box: a key being typed in is exactly the one the
+      // user wants checked before saving. An untouched box sends nothing and
+      // the Host tests the stored keys.
+      const draft = keyDrafts[provider.field];
+      const body = await callRoute(TEST_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          engine: provider.key,
+          ...(draft !== undefined ? { keys: parseKeys(draft) } : {}),
+        }),
+      });
+      setTests((s) => ({ ...s, [provider.key]: body.results ?? [] }));
+      if (statsOpen) void loadStats();
+    } catch (err: any) {
+      if (err instanceof RoutesUnavailable) setRoutesOk(false);
+      setTests((s) => ({
+        ...s,
+        [provider.key]: t("test.error", { error: err?.message ?? err }),
+      }));
+    } finally {
+      setTesting((s) => ({ ...s, [provider.key]: false }));
+    }
+  };
 
   // Let go of the arm if the user walks away from it.
   React.useEffect(() => {
@@ -1424,6 +1574,80 @@ function WebSearchFreeCard({
                 },
                 t("row.signup"),
               ),
+              routesOk && keyCount > 0
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      },
+                    },
+                    React.createElement(
+                      "button",
+                      {
+                        type: "button",
+                        disabled: testing[key] === true,
+                        title: t("test.title"),
+                        onClick: (e: any) => {
+                          e.stopPropagation();
+                          void testKeys(provider);
+                        },
+                        style: {
+                          ...btnOutlineStyle,
+                          fontSize: 12,
+                          padding: "3px 10px",
+                          alignSelf: "flex-start",
+                          ...(testing[key]
+                            ? { opacity: 0.6, cursor: "default" }
+                            : {}),
+                        },
+                      },
+                      t(testing[key] ? "test.busy" : "test.button"),
+                    ),
+                    ...(typeof tests[key] === "string"
+                      ? [
+                          React.createElement(
+                            "div",
+                            {
+                              key: "error",
+                              style: {
+                                fontSize: 12,
+                                color: "var(--dsw-alias-label-error)",
+                              },
+                            },
+                            tests[key] as string,
+                          ),
+                        ]
+                      : ((tests[key] as KeyTest[] | undefined) ?? []).map(
+                          (r, i) =>
+                            React.createElement(
+                              "div",
+                              {
+                                key: i,
+                                style: {
+                                  fontSize: 12,
+                                  lineHeight: 1.5,
+                                  wordBreak: "break-word",
+                                  fontFamily:
+                                    "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                  color: r.ok
+                                    ? "var(--dsw-alias-label-secondary)"
+                                    : "var(--dsw-alias-label-error)",
+                                },
+                              },
+                              r.ok
+                                ? t("test.ok", {
+                                    key: r.key,
+                                    count: r.results ?? 0,
+                                    ms: r.ms,
+                                  })
+                                : t("test.fail", { key: r.key, error: r.error }),
+                            ),
+                        )),
+                  )
+                : null,
             )
           : null,
       );
@@ -1766,6 +1990,199 @@ function WebSearchFreeCard({
           : null,
       ),
     );
+    // Group 4 — usage since the Host half started. Only on a dsh that serves
+    // the card routes; fetched when opened and on demand, never polled.
+    const tallyText = (tally: Tally) =>
+      tally.calls === 0
+        ? t("stats.unused")
+        : t("stats.tally", {
+            ok: tally.ok,
+            calls: tally.calls,
+            avg: Math.round(tally.totalMs / tally.calls),
+          });
+    const statsRow = (row: StatsRow, index: number) => {
+      const label = PROVIDERS.find((p) => p.key === row.engine)?.label ?? row.engine;
+      const lastError = row.search.lastError ?? row.fetch.lastError;
+      return React.createElement(
+        "div",
+        {
+          key: index,
+          style: {
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: "1px solid var(--dsw-alias-border-l2)",
+            fontSize: 12,
+            color: "var(--dsw-alias-label-secondary)",
+          },
+        },
+        React.createElement(
+          "div",
+          { style: { display: "flex", gap: 8, alignItems: "baseline" } },
+          React.createElement(
+            "span",
+            {
+              style: {
+                fontWeight: 600,
+                fontSize: 13,
+                color: "var(--dsw-alias-label-primary)",
+              },
+            },
+            label,
+          ),
+          React.createElement(
+            "span",
+            {
+              style: {
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              },
+            },
+            row.key ?? t("stats.keyless"),
+          ),
+          row.benchedForMs > 0
+            ? React.createElement(
+                "span",
+                { style: { color: "var(--dsw-alias-label-error)" } },
+                t("stats.benched", {
+                  min: Math.max(1, Math.ceil(row.benchedForMs / 60_000)),
+                }),
+              )
+            : null,
+        ),
+        React.createElement(
+          "div",
+          null,
+          `${t("stats.search")}：${tallyText(row.search)}`,
+          row.fetch.calls > 0
+            ? `　${t("stats.fetch")}：${tallyText(row.fetch)}`
+            : "",
+        ),
+        lastError
+          ? React.createElement(
+              "div",
+              {
+                style: {
+                  color: "var(--dsw-alias-label-tertiary)",
+                  wordBreak: "break-word",
+                },
+              },
+              t("stats.lastError", { error: lastError }),
+            )
+          : null,
+      );
+    };
+    if (routesOk)
+      children.push(
+        React.createElement(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: 6 } },
+          React.createElement(
+            "div",
+            { style: { display: "flex", alignItems: "center", gap: 8 } },
+            React.createElement(
+              "button",
+              {
+                type: "button",
+                onClick: () => {
+                  if (!statsOpen) void loadStats();
+                  setStatsOpen(!statsOpen);
+                },
+                style: {
+                  ...groupLabelStyle,
+                  appearance: "none",
+                  background: "none",
+                  border: 0,
+                  padding: 0,
+                  font: "inherit",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  textAlign: "left",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                },
+              },
+              t("stats.label"),
+              React.createElement(
+                "span",
+                {
+                  style: {
+                    display: "inline-flex",
+                    transition: "transform .16s",
+                    transform: statsOpen ? "rotate(180deg)" : "none",
+                  },
+                },
+                caret(11),
+              ),
+            ),
+            statsOpen
+              ? React.createElement(
+                  "button",
+                  {
+                    type: "button",
+                    disabled: statsLoading,
+                    onClick: () => void loadStats(),
+                    style: {
+                      ...btnOutlineStyle,
+                      fontSize: 11,
+                      padding: "1px 8px",
+                      marginLeft: "auto",
+                    },
+                  },
+                  t(statsLoading ? "stats.loading" : "stats.refresh"),
+                )
+              : null,
+          ),
+          statsOpen
+            ? React.createElement(
+                "div",
+                { style: { display: "flex", flexDirection: "column", gap: 6 } },
+                statsError
+                  ? React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 12,
+                          color: "var(--dsw-alias-label-error)",
+                        },
+                      },
+                      t("stats.error", { error: statsError }),
+                    )
+                  : null,
+                stats
+                  ? React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 11,
+                          color: "var(--dsw-alias-label-tertiary)",
+                        },
+                      },
+                      t("stats.cache", stats.cacheHits),
+                    )
+                  : null,
+                ...(stats && stats.rows.length === 0
+                  ? [
+                      React.createElement(
+                        "div",
+                        {
+                          key: "empty",
+                          style: {
+                            fontSize: 12,
+                            color: "var(--dsw-alias-label-tertiary)",
+                          },
+                        },
+                        t("stats.empty"),
+                      ),
+                    ]
+                  : (stats?.rows ?? []).map(statsRow)),
+              )
+            : null,
+        ),
+      );
     children.push(
       React.createElement(
         "div",

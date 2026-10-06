@@ -8,6 +8,7 @@ import { ProviderError } from './providers/fields.js'
 import { WebSearchProvider as MyProvider, SearchOptions, SearchResult } from './types.js'
 import { finalizeSources, matchesDomain, mergeResults, parseDomains } from './results.js'
 import { TtlCache } from './cache.js'
+import { UsageStats } from './usage.js'
 
 export const name = 'web-search-free'
 export const inject = ['web']
@@ -355,10 +356,33 @@ function chainFailure(kind: 'search' | 'fetch', trail: readonly string[]): Error
 const SEARCH_CACHE_ENTRIES = 200
 const FETCH_CACHE_ENTRIES = 30
 
+/**
+ * Routes the settings card calls, on dsh's shared `/api` channel. Registered
+ * through `ctx.connection.fetch`, so every request has already passed the
+ * Host/Origin fence and browser-cookie authentication before it reaches a
+ * handler: a page on another site cannot read the stats or spend quota on
+ * key tests.
+ */
+export const STATS_ROUTE = '/api/web-search-free/stats'
+export const TEST_ROUTE = '/api/web-search-free/test-keys'
+
+/** Query a key test runs. Neutral and certain to return results everywhere. */
+const TEST_QUERY = 'DeepSeek'
+
+/** Keys one test request may carry; each costs one search. */
+const MAX_TEST_KEYS = 10
+
+const jsonResponse = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  })
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     web: any
     settings: any
+    connection: any
   }
 }
 
@@ -488,12 +512,15 @@ export function apply(ctx: Context, config: RawConfig) {
     if (signal?.aborted) throw signal.reason ?? new Error(`web ${kind} aborted`)
     const scoped = attemptSignal(signal, ATTEMPT_TIMEOUT_MS[kind], `${provider.name} ${kind}`)
     const who = `Provider ${provider.name} (${key ? `key ${maskKey(key)}` : 'keyless'})`
+    const started = Date.now()
     try {
       const result = await attempt(provider, key, scoped.signal)
       benchedUntil.delete(`${provider.name}:${key}`)
+      usage.record(provider.name, key, kind, Date.now() - started)
       return result
     } catch (err: any) {
       if (signal?.aborted) throw err
+      usage.record(provider.name, key, kind, Date.now() - started, String(err?.message))
       const cooldown = cooldownFor(err, kind)
       if (cooldown !== undefined) benchedUntil.set(`${provider.name}:${key}`, Date.now() + cooldown)
       const benchNote = cooldown !== undefined ? ` Benched for ${Math.round(cooldown / 60_000)} min.` : ''
@@ -586,6 +613,9 @@ export function apply(ctx: Context, config: RawConfig) {
     return runChain('search', rest, signal, attempt, undefined, trail)
   }
 
+  /** Per-(engine, key) call counts since this plugin instance started, for the card. */
+  const usage = new UsageStats()
+
   const searchCache = new TtlCache<{ content: string; sources: SearchResult['sources'] }>(SEARCH_CACHE_ENTRIES)
   const fetchCache = new TtlCache<{ content: string; truncated: boolean }>(FETCH_CACHE_ENTRIES)
   const cacheTtl = (current: Config) => Math.max(0, current.cacheMinutes ?? 10) * 60_000
@@ -633,6 +663,7 @@ export function apply(ctx: Context, config: RawConfig) {
         strategy, width, options, preferred, snippetLength,
       ])
       const cached = searchCache.get(cacheKey)
+      if (cached) usage.cacheHit('search')
       if (cached) return { content: cached.content, sources: [...(cached.sources ?? [])], truncated: false }
 
       // Blocked domains are filtered per attempt, not after the fact: an
@@ -678,7 +709,9 @@ export function apply(ctx: Context, config: RawConfig) {
         throw new Error('No web fetch providers configured. Please set at least one API key in config.')
       }
       const weak = (r: { content: string }) => r.content.trim().length < MIN_FETCH_CHARS
-      const result = fetchCache.get(request.url) ?? await runChain(
+      const hit = fetchCache.get(request.url)
+      if (hit) usage.cacheHit('fetch')
+      const result = hit ?? await runChain(
         'fetch',
         attempts,
         signal,
@@ -701,4 +734,91 @@ export function apply(ctx: Context, config: RawConfig) {
       }
     }
   }))
+
+  /**
+   * The card's view of usage: one row per configured (engine, key), keys
+   * masked, plus the keyless fetch fallback once it has been used. Engines in
+   * configured order, so the table reads like the call order above it.
+   */
+  function statsSnapshot() {
+    const now = Date.now()
+    const rows: unknown[] = []
+    const seen = new Set<string>()
+    const row = (provider: MyProvider, key: string) => {
+      const id = `${provider.name}:${key}`
+      if (seen.has(id)) return
+      seen.add(id)
+      const until = benchedUntil.get(id) ?? 0
+      rows.push({
+        engine: provider.name,
+        key: key ? maskKey(key) : null,
+        ...usage.tallies(provider.name, key),
+        benchedForMs: until > now ? until - now : 0,
+      })
+    }
+    for (const { provider, keys } of getActiveProviders('search')) for (const key of keys) row(provider, key)
+    if (usage.has('jina', '')) row(availableProviders.jina, '')
+    return { since: usage.since, cacheHits: usage.cacheHits, rows }
+  }
+
+  /**
+   * Run one small search per key and report each outcome. Keys come from the
+   * request (a key typed in the card but not saved yet) or, when none are
+   * sent, from the stored config. Goes through `tryAttempt`, so a test also
+   * benches a dead key and clears the bench of a revived one — and never
+   * touches the cache.
+   */
+  async function testKeys(engine: string, requested: unknown) {
+    const provider = availableProviders[engine]
+    if (!provider) return jsonResponse(400, { error: `unknown engine ${JSON.stringify(engine)}` })
+    const fromRequest = Array.isArray(requested)
+      ? requested.filter((k): k is string => typeof k === 'string').map((k) => k.trim()).filter(Boolean)
+      : []
+    const stored = getActiveProviders('search').find((a) => a.provider === provider)?.keys ?? []
+    const keys = (fromRequest.length > 0 ? fromRequest : stored).slice(0, MAX_TEST_KEYS)
+    if (keys.length === 0) return jsonResponse(400, { error: 'no keys to test' })
+
+    const results = await Promise.all(keys.map(async (key) => {
+      const started = Date.now()
+      try {
+        const result = await tryAttempt('search', { provider, key }, undefined, (p, k, sig) =>
+          p.search(TEST_QUERY, k, sig, { maxResults: 3 }),
+        )
+        return { key: maskKey(key), ok: true, ms: Date.now() - started, results: result.sources?.length ?? 0 }
+      } catch (err: any) {
+        return { key: maskKey(key), ok: false, ms: Date.now() - started, error: String(err?.message ?? err) }
+      }
+    }))
+    return jsonResponse(200, { engine, results })
+  }
+
+  // The card's routes. Optional: a dsh without `connection.fetch` (older
+  // than its exact-route registry) simply has no stats or key tests, and the
+  // card hides both. Waited for in a child fiber, never in the top-level
+  // `inject` — a missing service there would keep this entry pending forever
+  // and fail the whole web boot (see the README's implementation notes).
+  ctx.inject(['connection'], (cctx) => {
+    const register = cctx.connection?.fetch?.register
+    if (typeof register !== 'function') return
+    cctx.effect(() => cctx.connection.fetch.register({
+      path: STATS_ROUTE,
+      methods: ['GET'],
+      requestBody: 'buffered',
+      fetch: async () => jsonResponse(200, statsSnapshot()),
+    }), 'web-search-free: stats route')
+    cctx.effect(() => cctx.connection.fetch.register({
+      path: TEST_ROUTE,
+      methods: ['POST'],
+      requestBody: 'buffered',
+      fetch: async (request: Request) => {
+        let body: any
+        try {
+          body = await request.json()
+        } catch {
+          return jsonResponse(400, { error: 'expected a JSON body' })
+        }
+        return testKeys(String(body?.engine ?? ''), body?.keys)
+      },
+    }), 'web-search-free: key test route')
+  })
 }
