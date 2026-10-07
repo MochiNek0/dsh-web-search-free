@@ -240,6 +240,12 @@ const ADVANCED: AdvancedField[] = [
     options: ["basic", "advanced"],
     def: "basic",
   },
+  {
+    field: "fetchSource",
+    kind: "select",
+    options: ["providers", "dsh"],
+    def: "providers",
+  },
   { field: "keylessJinaFetch", kind: "toggle", def: true },
   { field: "cacheMinutes", kind: "number", min: 0, max: 60, step: 5, def: 10 },
 ];
@@ -316,7 +322,7 @@ const zh = {
     "填了 Key 的引擎进入「调用顺序」：排在前面的优先调用，失败则 fallback 到下一个，拖 ⋮⋮ 可改顺序。每个引擎可填多个 Key（每行一个），同一引擎内也按顺序轮换。",
   "fetch.label": "启用 web_fetch（URL 抓取）",
   "fetch.on":
-    "已开启：模型可调用 web_fetch，由上面填了 Key 的引擎按顺序抓取 URL 全文。",
+    "已开启：模型可调用 web_fetch，抓取来源见「高级设置」里的「web_fetch 抓取来源」。",
   "fetch.off":
     "已关闭：模型调用 web_fetch 时会收到明确的错误提示（web_fetch 由 dsh 统一挂载，不再从工具表移除）。切换即时生效，无需重启。",
   "caps.searchFetch": "搜索 · 抓取",
@@ -445,6 +451,11 @@ const zh = {
   "adv.tavilySearchDepth.hint": "advanced 结果更相关，但每次消耗 2 credits。",
   "opt.tavilySearchDepth.basic": "basic（1 credit）",
   "opt.tavilySearchDepth.advanced": "advanced（2 credits）",
+  "adv.fetchSource": "web_fetch 抓取来源",
+  "adv.fetchSource.hint":
+    "providers：用填了 Key 的引擎按顺序抓取，都没有或都失败时退回 dsh 自带的本地抓取。dsh：直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS，部分站点会被拦）。",
+  "opt.fetchSource.providers": "插件引擎（失败退回 dsh 本地）",
+  "opt.fetchSource.dsh": "dsh 本地抓取",
   "adv.keylessJinaFetch": "无 Key 抓取兜底",
   "adv.keylessJinaFetch.hint":
     "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）。没配任何抓取引擎时，它就是唯一的抓取通道。",
@@ -465,7 +476,7 @@ const en: Record<keyof typeof zh, string> = {
     "Engines with a key join the call order: the first one is tried first, and a failure falls back to the next. Drag ⋮⋮ to reorder. Each engine takes several keys (one per line), rotated in order too.",
   "fetch.label": "Enable web_fetch (URL fetching)",
   "fetch.on":
-    "On: the model can call web_fetch, and the keyed engines above fetch full page text in order.",
+    "On: the model can call web_fetch; where pages are fetched from is set by \"web_fetch source\" under Advanced.",
   "fetch.off":
     "Off: calling web_fetch returns a clear error instead of fetching (the tool stays mounted by dsh). Takes effect immediately, no restart.",
   "caps.searchFetch": "Search · Fetch",
@@ -592,6 +603,11 @@ const en: Record<keyof typeof zh, string> = {
     "Advanced returns more relevant results but costs 2 credits per search.",
   "opt.tavilySearchDepth.basic": "basic (1 credit)",
   "opt.tavilySearchDepth.advanced": "advanced (2 credits)",
+  "adv.fetchSource": "web_fetch source",
+  "adv.fetchSource.hint":
+    "providers: the keyed engines fetch in call order, falling back to dsh's own local fetcher when none is configured or all fail. dsh: always use dsh's own local fetcher (free, the URL goes to no third party, but no JS rendering, and some sites block it).",
+  "opt.fetchSource.providers": "Plugin engines (dsh local as fallback)",
+  "opt.fetchSource.dsh": "dsh local fetch",
   "adv.keylessJinaFetch": "Keyless fetch fallback",
   "adv.keylessJinaFetch.hint":
     "When every keyed fetch fails, fall back to Jina Reader without a key (rate-limited; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch.",

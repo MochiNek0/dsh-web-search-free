@@ -43,6 +43,8 @@ export interface Config {
    * Read live at execution time, so the switch needs no restart.
    */
   enableFetch?: boolean
+  /** Who serves `web_fetch`; see `FETCH_SOURCES`. Only consulted while `enableFetch` is on. */
+  fetchSource?: FetchSource
   providerOrder: string[]
   /** How the search chain is walked; see `SEARCH_STRATEGIES`. */
   searchStrategy?: SearchStrategy
@@ -77,7 +79,21 @@ export interface Config {
 export const SEARCH_STRATEGIES = ['fallback', 'race', 'merge'] as const
 export type SearchStrategy = typeof SEARCH_STRATEGIES[number]
 
-export const REGIONS = ['auto', 'CN', 'HK', 'TW', 'SG', 'JP', 'KR', 'US', 'GB'] as const
+/**
+ * - `providers`: the keyed engines in call order, then keyless Jina when
+ *   enabled, then dsh's own local fetcher when all of those are missing or
+ *   failed.
+ * - `dsh`: straight to dsh's own local fetcher (`@deepseek-ai/dsh-web-fetch-http`,
+ *   the `http` provider dsh-base ships) — free, no URL leaves the machine for
+ *   a third party, but no JS rendering.
+ */
+export const FETCH_SOURCES = ['providers', 'dsh'] as const
+export type FetchSource = typeof FETCH_SOURCES[number]
+
+/** The id `@deepseek-ai/dsh-web-fetch-http` registers its provider under. */
+const DSH_FETCH_PROVIDER_ID = 'http'
+
+export const REGIONS =['auto', 'CN', 'HK', 'TW', 'SG', 'JP', 'KR', 'US', 'GB'] as const
 export const LANGUAGES = ['auto', 'zh-CN', 'zh-TW', 'en', 'ja', 'ko'] as const
 export const FRESHNESS = ['any', 'day', 'week', 'month', 'year'] as const
 export type Freshness = typeof FRESHNESS[number]
@@ -111,6 +127,8 @@ const configFields = () => ({
   serpapiApiKey: Schema.string().description('API key(s) for SerpApi. One key per line for multi-key rotation.'),
   serpingapiApiKey: Schema.string().description('API key(s) for Serping API. One key per line for multi-key rotation.'),
   enableFetch: Schema.boolean().default(true).description('是否允许模型调用 web_fetch（URL 内容抓取）。web_fetch 工具由 dsh 统一挂载，关闭后调用会返回明确的错误提示，而不是从工具表移除；切换即时生效，无需重启。'),
+  fetchSource: Schema.union([...FETCH_SOURCES]).default('providers')
+    .description('web_fetch 由谁抓取：providers 用填了 Key 的引擎（都没有或都失败时退回 dsh 自带的本地抓取）；dsh 直接用 dsh 自带的本地抓取（免费，不经第三方，但不渲染 JS）。'),
   providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi']))
     .default(['tinyfish', 'anysearch', 'tavily', 'brave', 'exa', 'firecrawl', 'serpapi', 'jina', 'serpingapi'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。'),
@@ -691,6 +709,25 @@ export function apply(ctx: Context, config: RawConfig) {
     }
   }))
 
+  /**
+   * dsh's own local fetcher, when the composition registered it and it is
+   * usable. The bundle patch pins `fetchProvider` to this plugin, so that
+   * provider is never selected by the seam itself; this plugin hands URLs to
+   * it instead. The seam offers no public lookup by id, so this reads its
+   * registry — a plain `Map` field on `WebRuntime` — and treats anything else
+   * as "not there", which only costs the fallback, never the plugin.
+   */
+  function dshFetchProvider(): { available(): boolean; fetch(request: any, signal?: AbortSignal): Promise<any> } | undefined {
+    const registry = (ctx.web as any)?.fetchProviders
+    const provider = registry instanceof Map ? registry.get(DSH_FETCH_PROVIDER_ID) : undefined
+    if (!provider || typeof provider.fetch !== 'function') return undefined
+    try {
+      return provider.available?.() === false ? undefined : provider
+    } catch {
+      return undefined
+    }
+  }
+
   ctx.effect(() => ctx.web?.registerFetchProvider({
     id: 'web-search-free',
     // The single `enableFetch` switch, read at execution time: the tool itself
@@ -699,25 +736,47 @@ export function apply(ctx: Context, config: RawConfig) {
     // naming this provider — rather than the tool vanishing from the model.
     available: () => {
       const current = resolved()
-      return current.enableFetch !== false &&
-        (getActiveProviders('fetch').length > 0 || keylessFetchAttempt(current).length > 0)
+      if (current.enableFetch === false) return false
+      if (current.fetchSource === 'dsh') return dshFetchProvider() !== undefined
+      return getActiveProviders('fetch').length > 0 ||
+        keylessFetchAttempt(current).length > 0 ||
+        dshFetchProvider() !== undefined
     },
     async fetch(request: any, signal: any) {
       const current = resolved()
+      const local = dshFetchProvider()
+      // Passed through untouched, so dsh's own WebError codes
+      // (WEB_FETCH_TIMEOUT, WEB_REDIRECT_BLOCKED, …) reach the tool as-is.
+      if (current.fetchSource === 'dsh') {
+        if (!local) throw new Error(`dsh's local fetch provider "${DSH_FETCH_PROVIDER_ID}" is not registered in this composition.`)
+        return local.fetch(request, signal)
+      }
       const attempts = [...orderedAttempts('fetch'), ...keylessFetchAttempt(current)]
       if (attempts.length === 0) {
+        if (local) return local.fetch(request, signal)
         throw new Error('No web fetch providers configured. Please set at least one API key in config.')
       }
       const weak = (r: { content: string }) => r.content.trim().length < MIN_FETCH_CHARS
       const hit = fetchCache.get(request.url)
       if (hit) usage.cacheHit('fetch')
-      const result = hit ?? await runChain(
-        'fetch',
-        attempts,
-        signal,
-        (provider, key, scoped) => provider.fetch(request.url, key, scoped),
-        weak,
-      )
+      let result: { content: string; truncated: boolean }
+      try {
+        result = hit ?? await runChain(
+          'fetch',
+          attempts,
+          signal,
+          (provider, key, scoped) => provider.fetch(request.url, key, scoped),
+          weak,
+        )
+      } catch (err: any) {
+        if (!local || signal?.aborted) throw err
+        logger.warn?.(`Every fetch engine failed; falling back to dsh's local fetch. ${String(err?.message)}`)
+        try {
+          return await local.fetch(request, signal)
+        } catch (localErr: any) {
+          throw new Error(`${String(err?.message).replace(/\.$/, '')}; dsh local fetch: ${String(localErr?.message)}`)
+        }
+      }
       // A weak result is the chain's last resort, not a good copy: leave it
       // out so the next fetch of this URL tries again.
       if (!weak(result)) fetchCache.set(request.url, result, cacheTtl(current))

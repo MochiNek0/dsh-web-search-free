@@ -130,7 +130,8 @@ pnpm 对本地目录默认以链接方式安装，所以之后重新 `pnpm build
 | 优先域名 | `preferredDomains` | 每行一个，来自这些域名的结果排到最前，不排除其他结果 |
 | 摘要长度 | `snippetLength` | 100–1000，默认 300。所有引擎统一裁到这个长度 |
 | Tavily 搜索深度 | `tavilySearchDepth` | `basic`（默认，1 credit）/ `advanced`（2 credits） |
-| 无 Key 抓取兜底 | `keylessJinaFetch` | 默认开启：带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（20 次/分钟，URL 会发给 Jina）。没配任何抓取引擎时它就是唯一的抓取通道 |
+| web_fetch 抓取来源 | `fetchSource` | `providers`（默认）：带 Key 的引擎 → 无 Key Jina → dsh 自带的本地抓取（`http`），前面都没有或都失败才轮到本地；`dsh`：始终直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS） |
+| 无 Key 抓取兜底 | `keylessJinaFetch` | 默认开启：带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（20 次/分钟，URL 会发给 Jina）。之后还失败才交给 dsh 本地抓取 |
 | 缓存时长 | `cacheMinutes` | 0–60 分钟，默认 10：相同的搜索或抓取在这段时间内直接返回上次的结果，不消耗额度。0 为关闭；只在内存里，重启即清空 |
 
 另外，插件对每个 (引擎, Key) 单独限时（搜索 10 秒、抓取 20 秒），超时就换下一个；返回 401/402/429 的 Key 会被暂时排到最后（429 两分钟，其余 30 分钟），日志里会写 `Benched for N min`。所有引擎都失败时，报错会逐个列出每次尝试的原因（Key 打码），一眼就能看出是哪个 Key 额度用完、哪个超时。

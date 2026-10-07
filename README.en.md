@@ -130,7 +130,8 @@ The **Advanced** section at the bottom of the card is collapsed by default. Ever
 | Preferred domains | `preferredDomains` | One per line; results from these domains move to the top, nothing is removed |
 | Snippet length | `snippetLength` | 100–1000, default 300; every engine's snippets are cut to this length |
 | Tavily search depth | `tavilySearchDepth` | `basic` (default, 1 credit) / `advanced` (2 credits) |
-| Keyless fetch fallback | `keylessJinaFetch` | On by default: when every keyed fetch fails, fall back to Jina Reader without a key (20 requests/min; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch |
+| web_fetch source | `fetchSource` | `providers` (default): keyed engines → keyless Jina → dsh's own local fetcher (`http`), which only runs when everything before it is missing or failed; `dsh`: always use dsh's own local fetcher (free, the URL goes to no third party, but no JS rendering) |
+| Keyless fetch fallback | `keylessJinaFetch` | On by default: when every keyed fetch fails, fall back to Jina Reader without a key (20 requests/min; the URL is sent to Jina). If that fails too, dsh's local fetcher takes over |
 | Cache | `cacheMinutes` | 0–60 minutes, default 10: an identical search or fetch within this window returns the previous result without using quota. 0 turns it off; memory only, cleared on restart |
 
 Each (engine, key) attempt also has its own time limit (10 s for search, 20 s for fetch) before the next one is tried, and a key that returns 401/402/429 is moved to the back of the chain for a while (2 minutes for 429, 30 minutes otherwise) — the log says `Benched for N min`. When every engine fails, the error lists each attempt's reason (keys masked), so you can see at a glance which key ran out of quota and which one timed out.
