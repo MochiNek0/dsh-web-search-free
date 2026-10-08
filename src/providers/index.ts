@@ -11,13 +11,13 @@ import { serpingapiProvider } from './serpingapi.js';
 
 // 注册所有可用的 Providers
 export const availableProviders: Record<string, WebSearchProvider> = {
-  tavily: tavilyProvider,
-  firecrawl: firecrawlProvider,
-  jina: jinaProvider,
-  exa: exaProvider,
-  brave: braveProvider,
-  anysearch: anysearchProvider,
   tinyfish: tinyfishProvider,
+  anysearch: anysearchProvider,
+  tavily: tavilyProvider,
+  brave: braveProvider,
+  exa: exaProvider,
+  firecrawl: firecrawlProvider,
   serpapi: serpapiProvider,
+  jina: jinaProvider,
   serpingapi: serpingapiProvider,
 };

@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-free",
-  "version": "1.6.0",
+  "version": "1.7.1",
   "description": "Free web search plugin for dsh supporting firecrawl and tavily",
   "keywords": [
     "dsh-plugin",
@@ -34,6 +34,9 @@
     "dist",
     "cordis.patch.yml"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

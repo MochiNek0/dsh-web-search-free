@@ -1,5 +1,8 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toPublishedAt } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, clampCount, googleCountry, googleLanguage, googleTbs, toPublishedAt } from './fields.js';
+
+/** `{ [name]: value }` when the value is set, `{}` otherwise — for spreading into a request body. */
+const optional = (name: string, value: unknown) => (value === undefined ? {} : { [name]: value });
 
 export const serpingapiProvider: WebSearchProvider = {
   name: 'serpingapi',
@@ -23,14 +26,21 @@ export const serpingapiProvider: WebSearchProvider = {
    * (401 invalid key, 429 `quota_exceeded` once the monthly quota is spent),
    * so a non-2xx here is what hands off to the next engine in the chain.
    */
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult> {
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
     const res = await fetch('https://api.serpingapi.com/v1/search', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': apiKey,
       },
-      body: JSON.stringify({ q: query }),
+      // Google-style `gl` / `hl` / `tbs`, plus `num` (1-100, default 10).
+      body: JSON.stringify({
+        q: query,
+        ...optional('num', clampCount(options?.maxResults, 100)),
+        ...optional('gl', googleCountry(options?.region)),
+        ...optional('hl', googleLanguage(options?.language)),
+        ...optional('tbs', googleTbs(options?.freshness)),
+      }),
       signal,
     });
     if (!res.ok) {
@@ -45,11 +55,11 @@ export const serpingapiProvider: WebSearchProvider = {
       } catch {
         // non-JSON error body; the status line is enough
       }
-      throw new Error(`Serping API search failed: ${res.status} ${res.statusText}${detail}`);
+      throw new ProviderError(`Serping API search failed: ${res.status} ${res.statusText}${detail}`, res.status);
     }
     const data = await res.json();
     const entries: any[] = Array.isArray(data?.organic) ? data.organic : [];
-    if (entries.length === 0) throw new Error('Serping API search returned no results.');
+    if (entries.length === 0) throw new ProviderError('Serping API search returned no results.');
 
     const sources = entries
       .map((r: any) => {
@@ -66,7 +76,7 @@ export const serpingapiProvider: WebSearchProvider = {
       })
       .filter((s): s is NonNullable<typeof s> => s !== undefined);
 
-    if (sources.length === 0) throw new Error('Serping API search returned no parsable results.');
+    if (sources.length === 0) throw new ProviderError('Serping API search returned no parsable results.');
 
     // `answerBox` is Google's featured snippet / direct answer when there is
     // one. Its short `answer` or `snippet` text goes into `content`, the same

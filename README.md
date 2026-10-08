@@ -33,15 +33,15 @@
 | -------------- | :--: | :--: | :------: | -------------------------------------------------- | ------------------------------------------------------- |
 | TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）                        | <https://www.tinyfish.ai/pricing>                       |
 | AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）                            | <https://anysearch.com/pricing>                         |
-| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                             |
 | Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                               |
-| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                            |
-| Serping API    |  ✓   |  ✗   |   部分   | 每个账号 1,000 次（一次性，无需绑卡）              | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 | Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register>       |
+| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                             |
+| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                            |
 | SerpApi        |  ✓   |  ✗   |    弱    | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>                     |
 | Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                               |
+| Serping API    |  ✓   |  ✗   |   部分   | 每个账号 1,000 次（一次性，无需绑卡）              | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 
-表格顺序即默认调用顺序（按可持续免费量从大到小排）。两点要注意：
+表格顺序即默认调用顺序：按**每月可持续免费次数**从大到小排（不限量 > 每日重置 > 每月重置 > 一次性额度），额度相当时按**易用性**排（无需注册/绑卡的优先）——所以 Tavily 排在同为约 1,000 次/月但需绑卡的 Brave 前面，一次性额度里免注册即可拿 Key 的 Jina 排在需注册的 Serping API 前面。两点要注意：
 
 - **抓取**：Brave、Serping API、SerpApi 是纯 SERP，没有 URL 抓取端点，只进搜索链。如果只配了这三家，抓取链为空，会报 `No web fetch providers configured.`——请再给一个支持抓取的引擎配上 Key。
 - **结果日期**：`publishedAt` 决定模型能否判断结果的时效性，各家差别很大。Brave 最全（实测 18/20），Exa、Jina、TinyFish、Serping API、SerpApi 部分带；Tavily 的 `published_date` 仅在 `topic: 'news'` 下返回，本插件走通用搜索因此为空；Firecrawl 和 AnySearch 没有这个字段。在意时效性可以把 Brave 往前挪，代价是丢掉 Tavily 的直接回答段和较长摘录。
@@ -109,6 +109,33 @@ pnpm 对本地目录默认以链接方式安装，所以之后重新 `pnpm build
 
 **至少配置一个引擎的 Key**，否则搜索会报 `No web search providers configured.`
 
+### 测试 Key 与用量统计
+
+- 展开某个引擎的行，点 **「测试 Key」**：用框里的每个 Key 各做一次小搜索（没保存也能测），逐个显示成功与否、返回条数和耗时，失败时给出引擎的原始报错（如 `401 Unauthorized`）。每个 Key 消耗一次搜索额度。
+- 卡片底部的 **「用量统计（本次启动以来）」** 按引擎、按 Key 列出调用次数、成功率、平均耗时、最近一次错误、是否在冷却中，以及缓存命中次数。数据只在内存里，重启 dsh 即清零。
+
+这两项走 dsh 的 `/api` 通道（与 Web 界面同一套登录和来源校验，别的网页调不到），需要 dsh 提供插件路由注册接口（已在 0.2.0-rc.2 上验证）；更早的版本上卡片会自动隐藏它们，其他功能不受影响。
+
+### 高级设置
+
+卡片底部的 **「高级设置」** 默认收起，每项都有可用的默认值，不打开也能正常用。顶部的 **快捷预设**（省额度 / 速度优先 / 质量优先 / 中文优先 / 恢复默认）一键填好相关选项，可以叠加，点保存才生效。
+
+| 设置 | 字段 | 说明 |
+| --- | --- | --- |
+| 搜索策略 | `searchStrategy` | `fallback`（默认）逐个尝试，最省额度；`race` 同时调用前 N 个引擎，用最快返回的；`merge` 同时调用前 N 个引擎并合并去重（同一页面被多个引擎命中会排到前面），结果最全，但每次搜索消耗 N 个引擎的额度 |
+| 同时调用的引擎数 | `parallelEngines` | 2–4，默认 2，只对 `race` / `merge` 生效 |
+| 结果地区 / 语言 | `region` / `language` | 默认 `auto`。各引擎支持程度不同：Brave、SerpApi、Serping API 地区和语言都支持；Tavily、Exa 只支持地区；TinyFish、AnySearch 支持但文档不全，被拒时自动去掉这两个参数重试；Firecrawl、Jina 不支持 |
+| 时间范围 | `freshness` | `any`（默认）/ `day` / `week` / `month` / `year`，作用于所有搜索。AnySearch、Jina 不支持 |
+| 屏蔽域名 | `blockedDomains` | 每行一个，子域名一并屏蔽。Tavily、Exa、TinyFish 在请求时就排除，其余引擎在结果里过滤；某个引擎的结果全被屏蔽时换下一个 |
+| 优先域名 | `preferredDomains` | 每行一个，来自这些域名的结果排到最前，不排除其他结果 |
+| 摘要长度 | `snippetLength` | 100–1000，默认 300。所有引擎统一裁到这个长度 |
+| Tavily 搜索深度 | `tavilySearchDepth` | `basic`（默认，1 credit）/ `advanced`（2 credits） |
+| web_fetch 抓取来源 | `fetchSource` | `providers`（默认）：带 Key 的引擎 → 无 Key Jina → dsh 自带的本地抓取（`http`），前面都没有或都失败才轮到本地；`dsh`：始终直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS） |
+| 无 Key 抓取兜底 | `keylessJinaFetch` | 默认开启：带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（20 次/分钟，URL 会发给 Jina）。之后还失败才交给 dsh 本地抓取 |
+| 缓存时长 | `cacheMinutes` | 0–60 分钟，默认 10：相同的搜索或抓取在这段时间内直接返回上次的结果，不消耗额度。0 为关闭；只在内存里，重启即清空 |
+
+另外，插件对每个 (引擎, Key) 单独限时（搜索 10 秒、抓取 20 秒），超时就换下一个；返回 401/402/429 的 Key 会被暂时排到最后（429 两分钟，其余 30 分钟），日志里会写 `Benched for N min`。所有引擎都失败时，报错会逐个列出每次尝试的原因（Key 打码），一眼就能看出是哪个 Key 额度用完、哪个超时。
+
 ### 找不到配置卡片时
 
 dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不止一次。插件同时认识历史上出现过的几个插槽，但如果你的 dsh 比本插件更新、插槽又改名了，卡片就不会出现——这时浏览器控制台会打印一行 `[web-search-free] no settings card mounted: …`，附上这版 dsh 实际声明的插槽名，**欢迎把这行贴到 issue 里**。
@@ -124,9 +151,13 @@ dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不�
       key-2
     enableFetch: true
     providerOrder: [tavily, exa, tinyfish]
+    searchStrategy: merge
+    region: CN
+    blockedDomains: |-
+      example-content-farm.com
 ```
 
-字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`。写完重启 dsh 生效。
+字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`，以及上面「高级设置」表里的字段。写完重启 dsh 生效。
 
 这里和卡片的关系随 dsh 版本而变：dsh ≥ 0.1.7 的卡片**就是往这个文件写**，两者是同一层，在卡片里保存会覆盖你手写的同名字段；dsh ≤ 0.1.6 的卡片写的是另一份设置文档（`~/.dsh/settings.yaml`），那边的值属于用户层，会盖住这里的 base 值。
 

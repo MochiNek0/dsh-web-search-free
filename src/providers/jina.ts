@@ -1,5 +1,5 @@
 import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toSnippet, toPublishedAt } from './fields.js';
+import { ProviderError, assertOk, toSnippet, toPublishedAt } from './fields.js';
 
 export const jinaProvider: WebSearchProvider = {
   name: 'jina',
@@ -21,7 +21,7 @@ export const jinaProvider: WebSearchProvider = {
       },
       signal,
     });
-    if (!res.ok) throw new Error(`Jina search failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Jina search');
 
     // s.jina.ai JSON mode has shipped both as a bare array and wrapped as
     // { code, status, data: [...] }; accept either so a future API revision
@@ -57,22 +57,28 @@ export const jinaProvider: WebSearchProvider = {
     // ends the fallback chain in `apply`, so an API revision that breaks the
     // shape above would silently degrade every search to "No results found."
     // instead of moving on to the next configured provider.
-    if (sources.length === 0) throw new Error('Jina search returned no parsable results.');
+    if (sources.length === 0) throw new ProviderError('Jina search returned no parsable results.');
 
     return { content: '', sources };
   },
 
+  /**
+   * An empty `apiKey` is the keyless fallback at the end of the fetch chain:
+   * Reader serves anonymous requests at a lower rate limit, and an empty
+   * `Bearer` header would be rejected rather than treated as anonymous.
+   */
   async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<FetchResult> {
     const res = await fetch(`https://r.jina.ai/${encodeURIComponent(url)}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        ...(apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}),
         'Accept': 'text/plain',
       },
       signal,
     });
-    if (!res.ok) throw new Error(`Jina fetch failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Jina fetch');
     const text = await res.text();
+    if (text.trim() === '') throw new ProviderError('Jina fetch returned no content.');
     // Jina Reader returns the full decoded page unless an `x-max-tokens` budget
     // is requested, which we never set, so there is no provider-side cap to
     // report. The official seam still flags truncation if its own

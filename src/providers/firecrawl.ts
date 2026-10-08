@@ -1,10 +1,12 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toSnippet } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, assertOk, clampCount, googleTbs, toSnippet } from './fields.js';
 
 export const firecrawlProvider: WebSearchProvider = {
   name: 'firecrawl',
   supportsFetch: true,
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult | string> {
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
+    // Firecrawl bills 2 credits per 10 results; `limit` omitted keeps its default of 5.
+    const limit = clampCount(options?.maxResults, 100);
     const res = await fetch('https://api.firecrawl.dev/v1/search', {
       method: 'POST',
       headers: {
@@ -12,13 +14,17 @@ export const firecrawlProvider: WebSearchProvider = {
         'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        query: query
+        query: query,
+        ...(limit !== undefined ? { limit } : {}),
+        // v1 search takes a recency `tbs` but no region or language of its
+        // own (those sit under `scrapeOptions`, which this search never uses).
+        ...(options?.freshness ? { tbs: googleTbs(options.freshness) } : {}),
       }),
       signal,
     });
-    if (!res.ok) throw new Error(`Firecrawl search failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Firecrawl search');
     const data = await res.json();
-    if (data.success && data.data) {
+    if (data.success && Array.isArray(data.data) && data.data.length > 0) {
       return {
         content: '', // Let sources speak for themselves
         sources: data.data.map((r: any) => ({
@@ -31,7 +37,7 @@ export const firecrawlProvider: WebSearchProvider = {
         }))
       };
     }
-    return 'No results found.';
+    throw new ProviderError('Firecrawl search returned no results.');
   },
   
   async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<FetchResult> {
@@ -47,9 +53,10 @@ export const firecrawlProvider: WebSearchProvider = {
       }),
       signal,
     });
-    if (!res.ok) throw new Error(`Firecrawl fetch failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Firecrawl fetch');
     const data = await res.json();
-    if (data.success && data.data) {
+    const markdown: unknown = data?.data?.markdown;
+    if (data.success && typeof markdown === 'string' && markdown.trim() !== '') {
       // Firecrawl reports a truncated body through `warning`, absent on a clean
       // scrape. The documented response puts it beside `data`, not inside it;
       // both are read because the field has moved between API revisions and the
@@ -57,10 +64,10 @@ export const firecrawlProvider: WebSearchProvider = {
       const raw = data.warning ?? data.data.warning;
       const warning = typeof raw === 'string' ? raw : '';
       return {
-        content: data.data.markdown || 'No markdown content available.',
+        content: markdown,
         truncated: warning.trim().length > 0,
       };
     }
-    return { content: 'Failed to fetch content.', truncated: false };
+    throw new ProviderError(`Firecrawl fetch returned no content${typeof data?.error === 'string' ? `: ${data.error}` : '.'}`);
   }
 };

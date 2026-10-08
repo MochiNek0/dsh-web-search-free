@@ -1,5 +1,20 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toPublishedAt } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, assertOk, clampCount, toPublishedAt } from './fields.js';
+
+/**
+ * Brave validates `country` and `search_lang` against fixed enums and answers
+ * an unknown value with 422, so only values from those enums are ever sent:
+ * Singapore has no Brave country and simply falls back to Brave's default.
+ */
+const BRAVE_COUNTRIES = new Set(['CN', 'HK', 'TW', 'JP', 'KR', 'US', 'GB']);
+const BRAVE_SEARCH_LANG: Record<string, string> = {
+  'zh-CN': 'zh-hans',
+  'zh-TW': 'zh-hant',
+  en: 'en',
+  ja: 'ja',
+  ko: 'ko',
+};
+const BRAVE_FRESHNESS = { day: 'pd', week: 'pw', month: 'pm', year: 'py' } as const;
 
 export const braveProvider: WebSearchProvider = {
   name: 'brave',
@@ -7,8 +22,17 @@ export const braveProvider: WebSearchProvider = {
   // must stay out of the fetch fallback chain. `fetch` is kept for interface
   // completeness and throws if ever reached directly.
   supportsFetch: false,
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult | string> {
-    const res = await fetch(`https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}`, {
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
+    const url = new URL('https://api.search.brave.com/res/v1/web/search');
+    url.searchParams.set('q', query);
+    // Brave's `count` accepts 1-20; omitted keeps its default of 20.
+    const count = clampCount(options?.maxResults, 20);
+    if (count !== undefined) url.searchParams.set('count', String(count));
+    if (options?.region && BRAVE_COUNTRIES.has(options.region)) url.searchParams.set('country', options.region);
+    const searchLang = options?.language ? BRAVE_SEARCH_LANG[options.language] : undefined;
+    if (searchLang) url.searchParams.set('search_lang', searchLang);
+    if (options?.freshness) url.searchParams.set('freshness', BRAVE_FRESHNESS[options.freshness]);
+    const res = await fetch(url, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -16,7 +40,7 @@ export const braveProvider: WebSearchProvider = {
       },
       signal,
     });
-    if (!res.ok) throw new Error(`Brave search failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Brave search');
     const data = await res.json();
     if (data.web && data.web.results && data.web.results.length > 0) {
       return {
@@ -32,7 +56,7 @@ export const braveProvider: WebSearchProvider = {
         }))
       };
     }
-    return 'No results found.';
+    throw new ProviderError('Brave search returned no results.');
   },
   
   async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<FetchResult> {

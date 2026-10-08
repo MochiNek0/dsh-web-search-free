@@ -1,5 +1,5 @@
-import { WebSearchProvider, SearchResult, FetchResult } from '../types.js';
-import { toSnippet, toPublishedAt } from './fields.js';
+import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
+import { ProviderError, assertOk, clampCount, freshnessSince, toSnippet, toPublishedAt } from './fields.js';
 
 /**
  * Cap requested from Exa's `/contents` endpoint, mirroring `dsh-tool-web`'s
@@ -14,7 +14,9 @@ const SEARCH_SNIPPET_CHARACTERS = 1000;
 export const exaProvider: WebSearchProvider = {
   name: 'exa',
   supportsFetch: true,
-  async search(query: string, apiKey: string, signal?: AbortSignal): Promise<SearchResult | string> {
+  async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
+    // Exa bills per result returned; `numResults` omitted keeps its default of 10.
+    const numResults = clampCount(options?.maxResults, 100);
     const res = await fetch('https://api.exa.ai/search', {
       method: 'POST',
       headers: {
@@ -23,6 +25,11 @@ export const exaProvider: WebSearchProvider = {
       },
       body: JSON.stringify({
         query: query,
+        ...(numResults !== undefined ? { numResults } : {}),
+        // Exa has no language parameter; region and recency map directly.
+        ...(options?.region ? { userLocation: options.region } : {}),
+        ...(options?.freshness ? { startPublishedDate: freshnessSince(options.freshness) } : {}),
+        ...(options?.excludeDomains?.length ? { excludeDomains: options.excludeDomains.slice(0, 1200) } : {}),
         contents: {
           // Only a snippet survives `toSnippet` below, so asking for the full
           // body per result would download (and bill) ~100x what is used.
@@ -31,7 +38,7 @@ export const exaProvider: WebSearchProvider = {
       }),
       signal,
     });
-    if (!res.ok) throw new Error(`Exa search failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Exa search');
     const data = await res.json();
     if (data.results && data.results.length > 0) {
       return {
@@ -46,7 +53,7 @@ export const exaProvider: WebSearchProvider = {
         }))
       };
     }
-    return 'No results found.';
+    throw new ProviderError('Exa search returned no results.');
   },
   
   async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<FetchResult> {
@@ -67,15 +74,12 @@ export const exaProvider: WebSearchProvider = {
       }),
       signal,
     });
-    if (!res.ok) throw new Error(`Exa fetch failed: ${res.status} ${res.statusText}`);
+    assertOk(res, 'Exa fetch');
     const data = await res.json();
-    if (data.results && data.results.length > 0) {
-      const text: string = data.results[0].text || '';
-      return {
-        content: text || 'No content found.',
-        truncated: text.length >= FETCH_MAX_CHARACTERS,
-      };
+    const text: unknown = data?.results?.[0]?.text;
+    if (typeof text !== 'string' || text.trim() === '') {
+      throw new ProviderError('Exa fetch returned no content.');
     }
-    return { content: 'No results found.', truncated: false };
+    return { content: text, truncated: text.length >= FETCH_MAX_CHARACTERS };
   }
 };

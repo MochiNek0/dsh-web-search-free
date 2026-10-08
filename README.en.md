@@ -33,15 +33,15 @@ This plugin calls each engine's retrieval endpoint directly (Tavily `/search`, E
 | -------------- | :----: | :---: | :---------: | ---------------------------------------------------------- | ------------------------------------------------------- |
 | TinyFish       |   ✓    |   ✓   |   partial   | Search & fetch free (rate-limited only)                    | <https://www.tinyfish.ai/pricing>                       |
 | AnySearch      |   ✓    |   ✓   |      ✗      | 1,000 calls/day (resets daily)                             | <https://anysearch.com/pricing>                         |
-| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                             |
 | Tavily         |   ✓    |   ✓   |      ✗      | 1,000 credits/month (resets monthly)                       | <https://app.tavily.com/>                               |
-| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                            |
-| Serping API    |   ✓    |   ✗   |   partial   | 1,000 free searches per account (one-time, no card)        | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 | Brave Search   |   ✓    |   ✗   |  **most**   | $5 credit/month (card required, not charged)               | <https://api-dashboard.search.brave.com/register>       |
+| Exa (Metaphor) |   ✓    |   ✓   |   partial   | $20 on signup + $10 credit/month (rolls over, never reset) | <https://dashboard.exa.ai/>                             |
+| Firecrawl      |   ✓    |   ✓   |      ✗      | 1,000 credits/month (search costs 2 per 10 results)        | <https://www.firecrawl.dev/>                            |
 | SerpApi        |   ✓    |   ✗   |    weak     | 250 calls/month (resets monthly)                           | <https://serpapi.com/users/sign_up>                     |
 | Jina AI        |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time, no reset)               | <https://jina.ai/api-key>                               |
+| Serping API    |   ✓    |   ✗   |   partial   | 1,000 free searches per account (one-time, no card)        | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
 
-The table order is the default call order (largest sustainable free tier first). Two things to note:
+The table order is the default call order: **sustainable free calls per month** first (unlimited > daily reset > monthly reset > one-time grants), with ties broken by **ease of signup** (no account / no card wins) — so Tavily sits ahead of Brave (both ≈1,000/month, but Brave needs a card), and among the one-time grants Jina (a key without signing up) sits ahead of Serping API. Two things to note:
 
 - **Fetching**: Brave, Serping API and SerpApi are pure SERP APIs with no URL fetch endpoint, so they only join the search chain. If those three are all you configured, the fetch chain is empty and fails with `No web fetch providers configured.` — add a key for an engine that supports fetching.
 - **Result dates**: `publishedAt` is what lets the model judge how current a result is, and coverage varies a lot. Brave is the most complete (18/20 measured); Exa, Jina, TinyFish, Serping API and SerpApi carry it on some results; Tavily's `published_date` is only returned under `topic: 'news'`, so it is empty here; Firecrawl and AnySearch have no such field. If recency matters, move Brave up the call order — at the cost of Tavily's direct answer and longer excerpts.
@@ -109,6 +109,33 @@ Engines come in two groups: **call order** holds the ones with a saved key — t
 
 **Configure at least one engine's key**, otherwise search fails with `No web search providers configured.`
 
+### Testing keys and usage
+
+- Expand an engine's row and click **Test keys**: each key in the box (saved or not) runs one small search, and the card shows per key whether it worked, how many results came back and how long it took — or the engine's own error (such as `401 Unauthorized`). Each key uses one search of quota.
+- **Usage (since start)** at the bottom of the card lists, per engine and key, calls, success rate, average latency, the last error and whether the key is benched, plus cache hits. It lives in memory and resets when dsh restarts.
+
+Both go through dsh's `/api` channel (the same sign-in and origin checks as the Web UI, so other web pages cannot call them) and need a dsh that offers plugin route registration (verified on 0.2.0-rc.2). On older versions the card hides them and everything else works as before.
+
+### Advanced settings
+
+The **Advanced** section at the bottom of the card is collapsed by default. Every field has a working default, so you never have to open it. The **Presets** at its top (Save quota / Fastest / Best quality / Chinese first / Reset to defaults) fill in the related fields in one click; they combine, and nothing applies until you Save.
+
+| Setting | Field | What it does |
+| --- | --- | --- |
+| Search strategy | `searchStrategy` | `fallback` (default) tries one engine at a time and uses the least quota; `race` queries the first N engines at once and takes the fastest; `merge` queries the first N engines at once and fuses their results (a page several engines found ranks higher) — the best coverage, at N engines' quota per search |
+| Engines queried at once | `parallelEngines` | 2–4, default 2; only used by `race` / `merge` |
+| Region / language | `region` / `language` | Default `auto`. Support varies: Brave, SerpApi and Serping API take both; Tavily and Exa take region only; TinyFish and AnySearch take both but document them loosely, so a rejection retries without them; Firecrawl and Jina take neither |
+| Time range | `freshness` | `any` (default) / `day` / `week` / `month` / `year`, applied to every search. Not supported by AnySearch or Jina |
+| Blocked domains | `blockedDomains` | One per line; subdomains too. Tavily, Exa and TinyFish exclude them in the request, the other engines' results are filtered; if every result from an engine is blocked, the next engine is tried |
+| Preferred domains | `preferredDomains` | One per line; results from these domains move to the top, nothing is removed |
+| Snippet length | `snippetLength` | 100–1000, default 300; every engine's snippets are cut to this length |
+| Tavily search depth | `tavilySearchDepth` | `basic` (default, 1 credit) / `advanced` (2 credits) |
+| web_fetch source | `fetchSource` | `providers` (default): keyed engines → keyless Jina → dsh's own local fetcher (`http`), which only runs when everything before it is missing or failed; `dsh`: always use dsh's own local fetcher (free, the URL goes to no third party, but no JS rendering) |
+| Keyless fetch fallback | `keylessJinaFetch` | On by default: when every keyed fetch fails, fall back to Jina Reader without a key (20 requests/min; the URL is sent to Jina). If that fails too, dsh's local fetcher takes over |
+| Cache | `cacheMinutes` | 0–60 minutes, default 10: an identical search or fetch within this window returns the previous result without using quota. 0 turns it off; memory only, cleared on restart |
+
+Each (engine, key) attempt also has its own time limit (10 s for search, 20 s for fetch) before the next one is tried, and a key that returns 401/402/429 is moved to the back of the chain for a while (2 minutes for 429, 30 minutes otherwise) — the log says `Benched for N min`. When every engine fails, the error lists each attempt's reason (keys masked), so you can see at a glance which key ran out of quota and which one timed out.
+
 ### When the card is nowhere to be found
 
 dsh's plugin configuration surface is still moving fast, and the slot the card occupies has been renamed more than once. The plugin knows every slot name that has existed so far, but if your dsh is newer than the plugin and the slot changed again, the card will not appear — the browser console then carries one line, `[web-search-free] no settings card mounted: …`, listing the plugin-related slots your dsh does declare. **Please paste that line into an issue.**
@@ -124,9 +151,13 @@ You do not have to wait for a release: **every setting can be written straight i
       key-2
     enableFetch: true
     providerOrder: [tavily, exa, tinyfish]
+    searchStrategy: merge
+    region: CN
+    blockedDomains: |-
+      example-content-farm.com
 ```
 
-The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`. Restart dsh to apply.
+The field names match the card one for one (see `Config` in `src/index.ts`): `<engine>ApiKey` (a multi-line string for multiple keys), `enableFetch`, `providerOrder`, plus the fields in the Advanced table above. Restart dsh to apply.
 
 How this relates to the card depends on the dsh version: on dsh >= 0.1.7 the card writes to *this very file* — same layer, so saving from the card overwrites the fields you hand-wrote here. On dsh <= 0.1.6 the card writes a separate settings document (`~/.dsh/settings.yaml`) whose values form the user layer and override the base values set here.
 
