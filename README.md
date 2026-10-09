@@ -2,145 +2,131 @@
 
 中文 | [English](https://github.com/MochiNek0/dsh-web-search-free/blob/main/README.en.md)
 
-面向 [DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的免费 Web Search / 网页抓取插件。它把 dsh 默认的 `deepseek-official` 通道换成**多引擎 + 自动 fallback**：你填哪些引擎的 Key，它就按你排的顺序依次尝试，失败或额度用尽自动落到下一个；同一引擎可填多个 Key（每行一个），引擎内也按序轮换。
+[DeepSeek Harness (dsh)](https://github.com/deepseek-ai/deepseek-harness) 的免费 Web Search / 网页抓取插件。它把 dsh 默认的 `deepseek-official` 通道换成**多引擎 + 自动 fallback**：按你排的顺序依次尝试已填 Key 的引擎，失败或额度用尽就换下一个；同一引擎可填多个 Key（每行一个），按序轮换。
 
-- **不烧模型 token**——走各引擎的专用检索端点，全程不经过任何 LLM。
-- **装上即接管，卸载即回落**——作为 dsh bundle 层安装，无需手改 profile。
-- **自带配置卡片**——拖动排序、逐个填 Key，文案跟随 dsh 的语言设置中英切换。
-- **可开关 `web_fetch`**——关闭后模型每次调用都会收到明确的「后端已停用」错误。
-
-所有检索请求都由 dsh 的**宿主进程（Node）**直接发往各引擎，不经过官方搜索后端；浏览器侧只有那张配置卡片，不发任何网络请求。
+- **不烧模型 token**：直接调各引擎的检索端点，不经过任何 LLM。
+- **装上即接管，卸载即回落**：以 dsh bundle 层安装，无需手改 profile。
+- **自带配置卡片**：拖动排序、填 Key、测试 Key、查看用量，界面语言跟随 dsh。
+- **请求只从宿主进程发出**：浏览器侧只有配置卡片，不直接访问任何外部服务。
 
 ## 为什么是 "free"
 
-官方通道 `deepseek-official`（由 `@deepseek-ai/dsh-web-search-deepseek` 提供）**不是一个专用搜索端点**：每次搜索都会发起一次**完整的 Messages 模型调用**（带原生 `web_search` 服务端工具），由 DeepSeek 在服务端执行搜索。所以每次搜索烧两份 token——辅助搜索请求本身（input + output，`maxTokens` 默认 4096、`maxUses` 默认 5），以及回灌进对话上下文、一直重发到压缩为止的 sources。两份都从 `DEEPSEEK_API_KEY` 余额扣除。
+官方通道 `deepseek-official` 的每次搜索都是一次**完整的模型调用**（带服务端 `web_search` 工具），搜索请求本身和回灌进上下文的 sources 都从 `DEEPSEEK_API_KEY` 余额扣 token。
 
-本插件直接调各引擎的检索端点（Tavily `/search`、Exa `/search`、Jina `s.jina.ai` 等），纯检索：
+|            | 官方 `deepseek-official`                    | 本插件 `web-search-free`            |
+| ---------- | ------------------------------------------- | ----------------------------------- |
+| 检索方式   | LLM 调用 + 服务端搜索工具                   | 直接调引擎检索端点                  |
+| 模型 token | 每次搜索都消耗                              | **0**                               |
+| 计费       | DeepSeek API 余额                           | 各搜索 API 自身额度（多数有免费层） |
+| 凭据       | **必须** `DEEPSEEK_API_KEY`                 | 各引擎自己的 Key                    |
+| 结果       | 只有 sources，未被模型引用的结果没有 snippet | sources + snippet；Tavily 另给直接回答 |
 
-|            | 官方 `deepseek-official`                                                 | 本插件 `web-search-free`                   |
-| ---------- | ------------------------------------------------------------------------ | ------------------------------------------ |
-| 检索方式   | 一次完整 LLM 模型调用 + 服务端搜索工具                                   | 直接调各引擎专用检索端点                   |
-| 模型 token | 每次搜索都烧（input + output）                                           | **0**（纯检索，不碰任何 LLM）              |
-| 计费来源   | DeepSeek API 余额                                                        | 各搜索 API 自身额度（多数有免费层）        |
-| 凭据       | **必须** `DEEPSEEK_API_KEY`                                              | 各引擎各自的 API Key                       |
-| 结果内容   | 只有 sources；snippet 取自模型引用的片段，未被引用的结果**没有 snippet** | sources + snippet；Tavily 另给一段直接回答 |
-
-> **一个容易踩的坑**：官方通道强制依赖 `DEEPSEEK_API_KEY`。如果你的对话模型走第三方渠道（自建 provider、中转站等），很可能根本没配这个 key——而官方 provider 的 `available()` 只检查"有没有 key 解析器"（永远有），所以 dsh 会照常选中它，**直到模型真的调用 `web_search` 才抛 `WEB_PROVIDER_CREDENTIAL_MISSING`**，UI 上看不出问题。本插件不依赖任何 LLM 凭据。
+> 如果你的对话模型走第三方渠道、没配 `DEEPSEEK_API_KEY`，官方通道仍会被选中，直到模型真正调用 `web_search` 才报 `WEB_PROVIDER_CREDENTIAL_MISSING`。本插件不依赖任何 LLM 凭据。
 
 ## 支持的引擎
 
-| 引擎           | 搜索 | 抓取 | 结果日期 | 免费额度                                           | 获取 API Key                                            |
-| -------------- | :--: | :--: | :------: | -------------------------------------------------- | ------------------------------------------------------- |
-| TinyFish       |  ✓   |  ✓   |   部分   | 搜索/抓取免费（仅按速率限）                        | <https://www.tinyfish.ai/pricing>                       |
-| AnySearch      |  ✓   |  ✓   |    ✗     | 1,000 次/天（每天重置）                            | <https://anysearch.com/pricing>                         |
-| Tavily         |  ✓   |  ✓   |    ✗     | 1,000 credits/月（每月重置）                       | <https://app.tavily.com/>                               |
-| Brave Search   |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）                       | <https://api-dashboard.search.brave.com/register>       |
-| Exa (Metaphor) |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10 credit（累积，不按月清零） | <https://dashboard.exa.ai/>                             |
-| Firecrawl      |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果）         | <https://www.firecrawl.dev/>                            |
-| SerpApi        |  ✓   |  ✗   |    弱    | 250 次/月（每月重置）                              | <https://serpapi.com/users/sign_up>                     |
-| Jina AI        |  ✓   |  ✓   |   部分   | 新 key 送 10M tokens（一次性，用完即止）           | <https://jina.ai/api-key>                               |
-| Serping API    |  ✓   |  ✗   |   部分   | 每个账号 1,000 次（一次性，无需绑卡）              | <https://serpingapi.com/signup?ref=dsh-web-search-free> |
+| 引擎                 | 搜索 | 抓取 | 结果日期 | 免费额度                                   | 获取 API Key                                             |
+| -------------------- | :--: | :--: | :------: | ------------------------------------------ | -------------------------------------------------------- |
+| TinyFish             |  ✓   |  ✓   |   部分   | 免费，仅限速率                             | <https://www.tinyfish.ai/pricing>                        |
+| SearXNG              |  ✓   |  ✗   |   部分   | 自建实例，不限量（「Key」填实例地址）      | <https://docs.searxng.org/admin/installation.html>       |
+| AnySearch            |  ✓   |  ✓   |    ✗     | 1,000 次/天                                | <https://anysearch.com/pricing>                          |
+| 百度千帆             |  ✓   |  ✗   |   部分   | 每日免费额度（以控制台为准）               | <https://console.bce.baidu.com/iam/#/iam/apikey/list>    |
+| Tavily               |  ✓   |  ✓   |    ✗     | 1,000 credits/月                           | <https://app.tavily.com/>                                |
+| Brave Search         |  ✓   |  ✗   | **多数** | $5 额度/月（需绑卡，不扣费）               | <https://api-dashboard.search.brave.com/register>        |
+| Exa (Metaphor)       |  ✓   |  ✓   |   部分   | 注册送 $20 + 每月补 $10（累积）            | <https://dashboard.exa.ai/>                              |
+| Firecrawl            |  ✓   |  ✓   |    ✗     | 1,000 credits/月（搜索 2 credits/10 结果） | <https://www.firecrawl.dev/>                             |
+| 火山引擎（豆包搜索） |  ✓   |  ✗   |   部分   | 500 次/月                                  | <https://console.volcengine.com/search-infinity/api-key> |
+| SerpApi              |  ✓   |  ✗   |    弱    | 250 次/月                                  | <https://serpapi.com/users/sign_up>                      |
+| Jina AI              |  ✓   |  ✓   |   部分   | 新 Key 送 10M tokens（一次性）             | <https://jina.ai/api-key>                                |
+| Serping API          |  ✓   |  ✗   |   部分   | 每账号 1,000 次（一次性，无需绑卡）        | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
 
-表格顺序即默认调用顺序：按**每月可持续免费次数**从大到小排（不限量 > 每日重置 > 每月重置 > 一次性额度），额度相当时按**易用性**排（无需注册/绑卡的优先）——所以 Tavily 排在同为约 1,000 次/月但需绑卡的 Brave 前面，一次性额度里免注册即可拿 Key 的 Jina 排在需注册的 Serping API 前面。两点要注意：
+表格顺序即默认调用顺序：按可持续免费次数从多到少（不限量 > 每日重置 > 每月重置 > 一次性），相当时注册/绑卡门槛低的优先。
 
-- **抓取**：Brave、Serping API、SerpApi 是纯 SERP，没有 URL 抓取端点，只进搜索链。如果只配了这三家，抓取链为空，会报 `No web fetch providers configured.`——请再给一个支持抓取的引擎配上 Key。
-- **结果日期**：`publishedAt` 决定模型能否判断结果的时效性，各家差别很大。Brave 最全（实测 18/20），Exa、Jina、TinyFish、Serping API、SerpApi 部分带；Tavily 的 `published_date` 仅在 `topic: 'news'` 下返回，本插件走通用搜索因此为空；Firecrawl 和 AnySearch 没有这个字段。在意时效性可以把 Brave 往前挪，代价是丢掉 Tavily 的直接回答段和较长摘录。
+- **抓取**：只能搜索的引擎（✗）不参与抓取。没有可用的抓取引擎时，`web_fetch` 退回无 Key 的 Jina Reader 和 dsh 本地抓取（见[高级设置](#高级设置)）。
+- **结果日期**：决定模型能否判断时效。Brave 最全（实测 18/20）；Tavily 通用搜索不返回日期，Firecrawl、AnySearch 没有该字段。在意时效可把 Brave 往前挪。
 
 <details>
-<summary>各家免费额度的重置机制（点击展开）</summary>
+<summary>各引擎注意事项</summary>
 
-- **Jina**：一次性 token，新 key 送 10M，`s.jina.ai` 每次固定扣 1 万，约够 1,000 次搜索，用完只能充值或换 key，不重置。
-- **Exa**：可累积 credit，注册送 $20 + 每月补 $10，余额不清零，约能跑 1,400 次基础搜索。
-- **AnySearch**：每日重置，1,000 次/天（约 3 万次/月）。
-- **Serping API**：一次性额度，每个账号 1,000 次，无需绑卡，用完不重置；付费套餐 $25/月起（10,000 次/月）。
-- **Tavily / Firecrawl / SerpApi / Brave**：每月重置。
-- **TinyFish**：搜索/抓取完全免费，只卡速率（免费层 Search 30 req/min、Fetch 150 url/min）。
+- **Jina**：`s.jina.ai` 每次扣 1 万 token，约够 1,000 次搜索，用完不重置。
+- **Exa**：余额不清零，约 1,400 次基础搜索。
+- **TinyFish**：免费层 Search 30 次/分钟、Fetch 150 URL/分钟。
+- **SearXNG**：「Key」框填实例地址（如 `https://searx.example.com`），每行一个。实例需在 `settings.yml` 的 `search.formats` 里加上 `json`，否则返回 403。
+- **百度千帆**：Key 在百度智能云 API Key（V2）页面创建，旧版 AK/SK 不可用。只搜中文网页。
+- **火山引擎**：Key 来自联网搜索控制台的「API Key 管理」，火山方舟（Ark）的 Key 不可用。每月 1 日重置，只搜中文网页。
 
 </details>
 
 ## 安装
 
-前置条件：**dsh ≥ 0.1.2-rc.1**、`pnpm` 在 `PATH` 上、目标 profile 一般是 `web`（本插件客户端半边声明 `platform: web`，配置卡片只在 Web 界面出现；`web` profile 首次使用时自动从模板初始化）。
+前置条件：**dsh ≥ 0.1.2-rc.1**，`pnpm` 在 `PATH` 上。配置卡片只在 Web 界面出现，因此一般装到 `web` profile：
 
 ```sh
 dsh plugin --profile web add dsh-web-search-free
 ```
 
-`dsh plugin` 会把 pnpm 参数转发到 profile 目录里执行，成功后**自动对账 `dsh.profile.bundles`**——本插件声明了 `dsh.bundle.patch`，所以装上即接管 web 搜索/抓取，无需手改 profile。
+安装后 dsh 自动对账 `dsh.profile.bundles`，插件即接管 web 搜索与抓取。
 
 <details>
-<summary>从本地源码安装（二次开发用）</summary>
-
-本仓库 `dist/` 被 gitignore，安装前需要先构建：
+<summary>从本地源码安装</summary>
 
 ```sh
-cd /path/to/dsh-web-search-free
 pnpm install
-pnpm build                          # 生成 dist/index.js 与 dist/client.js
-dsh plugin --profile web add .      # "." 锚定到当前目录，也可用绝对路径
+pnpm build                          # 生成 dist/（已 gitignore）
+dsh plugin --profile web add .
 ```
 
-pnpm 对本地目录默认以链接方式安装，所以之后重新 `pnpm build`，profile 会即时拿到新产物。改完客户端半边刷新浏览器即可。
+本地目录以链接方式安装，之后重新 `pnpm build` 即生效；改客户端代码后刷新浏览器即可。
 
 </details>
 
-<details>
-<summary>更早的 dsh（≤ 0.1.2-alpha.5）</summary>
-
-那些版本的组合不挂载 web 工具，装本插件后**搜索可用，但 `web_fetch` 不会出现**——请改用 1.3.0，它自行挂载 `tool-web`。
-
-</details>
+> dsh ≤ 0.1.2-alpha.5 不挂载 web 工具，装本插件后只有搜索、没有 `web_fetch`，请改用插件 1.3.0。
 
 ## 配置
 
-启动 Web 界面（`dsh web`）后找到配置卡片。它的位置由 dsh 版本决定，插件会自动落到当前版本存在的那个位置：
+运行 `dsh web`，找到配置卡片：
 
-| dsh 版本 | 卡片位置 |
-| --- | --- |
-| ≥ 0.1.6 | 侧栏 **插件** → 「已安装」里的 **web-search-free**，表单在包说明与「包含的组件」之间 |
-| ≤ 0.1.5 | **设置 → 插件 → 插件配置 → 免费网页搜索**（英文界面下为 **Web Search Free**） |
+| dsh 版本 | 卡片位置                                                |
+| -------- | ------------------------------------------------------- |
+| ≥ 0.1.6  | 侧栏 **插件** → 「已安装」→ **web-search-free**         |
+| ≤ 0.1.5  | **设置 → 插件 → 插件配置 → 免费网页搜索**               |
 
-卡片里的引擎分成两组：**「调用顺序」**是已存过 Key、真正参与调用的（带 `#1`、`#2` 序号），**「其他可用引擎 (n)」**是还没填 Key 的。
+1. **点击引擎行**展开，粘贴 Key（每行一个）；行内「获取 API Key ↗」直达申请页。
+2. **拖动 `⋮⋮` 手柄**调整「调用顺序」：靠前的先调，失败按序 fallback。
+3. 顶部开关 **「启用 web_fetch」**：关闭后模型调用 `web_fetch` 会收到明确的错误。
+4. 点 **保存**，下一次搜索即生效，无需重启。
 
-1. **点击一行**展开，粘贴 API Key；行内「获取 API Key ↗」直达申请页。一个引擎可填多个 Key，**每行一个**，按行顺序轮换。保存后该行自动移进「调用顺序」。
-2. **拖行左侧的 `⋮⋮` 手柄**改调用顺序：靠前的先调，失败按序 fallback，任一 (引擎, Key) 成功即返回。只有「调用顺序」组里的行可拖；点行体是展开/收起，要拖请抓 `⋮⋮`。
-3. 顶部的 **「启用 web_fetch（URL 抓取）」** 开关控制模型能否抓取 URL 全文。关闭后调用会收到明确的错误提示，而不是从工具表移除工具。
-4. 点**保存**。配置存在 dsh 的设置命名空间 `web-search-free` 里，下一次搜索即时生效，无需重启。
+至少要配一个引擎，否则搜索报 `No web search providers configured.`
 
-**至少配置一个引擎的 Key**，否则搜索会报 `No web search providers configured.`
+卡片还提供（需 dsh 支持插件路由，已在 0.2.0-rc.2 验证；旧版本自动隐藏）：
 
-### 测试 Key 与用量统计
-
-- 展开某个引擎的行，点 **「测试 Key」**：用框里的每个 Key 各做一次小搜索（没保存也能测），逐个显示成功与否、返回条数和耗时，失败时给出引擎的原始报错（如 `401 Unauthorized`）。每个 Key 消耗一次搜索额度。
-- 卡片底部的 **「用量统计（本次启动以来）」** 按引擎、按 Key 列出调用次数、成功率、平均耗时、最近一次错误、是否在冷却中，以及缓存命中次数。数据只在内存里，重启 dsh 即清零。
-
-这两项走 dsh 的 `/api` 通道（与 Web 界面同一套登录和来源校验，别的网页调不到），需要 dsh 提供插件路由注册接口（已在 0.2.0-rc.2 上验证）；更早的版本上卡片会自动隐藏它们，其他功能不受影响。
+- **测试 Key**：每个 Key 做一次小搜索，显示成功与否、条数、耗时或原始报错。每个 Key 消耗一次额度。
+- **用量统计**：按引擎、Key 显示调用次数、成功率、平均耗时、最近错误、冷却状态和缓存命中。仅存内存，重启清零。
+- **检查更新**：由宿主进程查询 npm registry，有新版时给出升级命令。
 
 ### 高级设置
 
-卡片底部的 **「高级设置」** 默认收起，每项都有可用的默认值，不打开也能正常用。顶部的 **快捷预设**（省额度 / 速度优先 / 质量优先 / 中文优先 / 恢复默认）一键填好相关选项，可以叠加，点保存才生效。
+卡片底部「高级设置」默认收起，不改也能用。顶部的**快捷预设**（省额度 / 速度优先 / 质量优先 / 中文优先 / 恢复默认）可叠加，保存后生效。
 
-| 设置 | 字段 | 说明 |
-| --- | --- | --- |
-| 搜索策略 | `searchStrategy` | `fallback`（默认）逐个尝试，最省额度；`race` 同时调用前 N 个引擎，用最快返回的；`merge` 同时调用前 N 个引擎并合并去重（同一页面被多个引擎命中会排到前面），结果最全，但每次搜索消耗 N 个引擎的额度 |
-| 同时调用的引擎数 | `parallelEngines` | 2–4，默认 2，只对 `race` / `merge` 生效 |
-| 结果地区 / 语言 | `region` / `language` | 默认 `auto`。各引擎支持程度不同：Brave、SerpApi、Serping API 地区和语言都支持；Tavily、Exa 只支持地区；TinyFish、AnySearch 支持但文档不全，被拒时自动去掉这两个参数重试；Firecrawl、Jina 不支持 |
-| 时间范围 | `freshness` | `any`（默认）/ `day` / `week` / `month` / `year`，作用于所有搜索。AnySearch、Jina 不支持 |
-| 屏蔽域名 | `blockedDomains` | 每行一个，子域名一并屏蔽。Tavily、Exa、TinyFish 在请求时就排除，其余引擎在结果里过滤；某个引擎的结果全被屏蔽时换下一个 |
-| 优先域名 | `preferredDomains` | 每行一个，来自这些域名的结果排到最前，不排除其他结果 |
-| 摘要长度 | `snippetLength` | 100–1000，默认 300。所有引擎统一裁到这个长度 |
-| Tavily 搜索深度 | `tavilySearchDepth` | `basic`（默认，1 credit）/ `advanced`（2 credits） |
-| web_fetch 抓取来源 | `fetchSource` | `providers`（默认）：带 Key 的引擎 → 无 Key Jina → dsh 自带的本地抓取（`http`），前面都没有或都失败才轮到本地；`dsh`：始终直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS） |
-| 无 Key 抓取兜底 | `keylessJinaFetch` | 默认开启：带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（20 次/分钟，URL 会发给 Jina）。之后还失败才交给 dsh 本地抓取 |
-| 缓存时长 | `cacheMinutes` | 0–60 分钟，默认 10：相同的搜索或抓取在这段时间内直接返回上次的结果，不消耗额度。0 为关闭；只在内存里，重启即清空 |
+| 设置            | 字段                  | 说明                                                                                                                                   |
+| --------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 搜索策略        | `searchStrategy`      | `fallback`（默认）逐个尝试，最省额度；`race` 同时调前 N 个、取最快；`merge` 同时调前 N 个并合并去重，结果最全但消耗 N 倍额度           |
+| 并发引擎数      | `parallelEngines`     | 2–4，默认 2，仅 `race` / `merge` 使用                                                                                                  |
+| 结果地区 / 语言 | `region` / `language` | 默认 `auto`。Brave、SerpApi、Serping API、TinyFish、AnySearch 两项都支持；Tavily、Exa 仅地区；SearXNG 仅语言；其余不支持            |
+| 时间范围        | `freshness`           | `any`（默认）/ `day` / `week` / `month` / `year`。AnySearch、Jina 不支持；百度千帆的 `day` 按一周查                                    |
+| 屏蔽域名        | `blockedDomains`      | 每行一个，含子域名                                                                                                                     |
+| 优先域名        | `preferredDomains`    | 每行一个，这些域名的结果排到最前                                                                                                       |
+| 摘要长度        | `snippetLength`       | 100–1000，默认 300                                                                                                                     |
+| Tavily 搜索深度 | `tavilySearchDepth`   | `basic`（默认，1 credit）/ `advanced`（2 credits）                                                                                     |
+| 抓取来源        | `fetchSource`         | `providers`（默认）：有 Key 的引擎 → 无 Key Jina → dsh 本地抓取；`dsh`：只用 dsh 本地抓取（免费、不经第三方，但不渲染 JS）             |
+| 无 Key 抓取兜底 | `keylessJinaFetch`    | 默认开启，有 Key 的抓取都失败时用无 Key 的 Jina Reader（20 次/分钟，URL 会发给 Jina）                                                  |
+| 缓存时长        | `cacheMinutes`        | 0–60 分钟，默认 10；相同请求直接返回缓存，不耗额度。0 为关闭                                                                           |
 
-另外，插件对每个 (引擎, Key) 单独限时（搜索 10 秒、抓取 20 秒），超时就换下一个；返回 401/402/429 的 Key 会被暂时排到最后（429 两分钟，其余 30 分钟），日志里会写 `Benched for N min`。所有引擎都失败时，报错会逐个列出每次尝试的原因（Key 打码），一眼就能看出是哪个 Key 额度用完、哪个超时。
+每次 (引擎, Key) 尝试单独限时（搜索 10 秒、抓取 20 秒）。返回 401/402/403/429 或提示额度用尽的 Key 会暂时排到链尾（429 为 2 分钟，其余 30 分钟）。全部失败时，报错会列出每次尝试的原因（Key 已打码）。
 
-### 找不到配置卡片时
+### 手动配置
 
-dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不止一次。插件同时认识历史上出现过的几个插槽，但如果你的 dsh 比本插件更新、插槽又改名了，卡片就不会出现——这时浏览器控制台会打印一行 `[web-search-free] no settings card mounted: …`，附上这版 dsh 实际声明的插槽名，**欢迎把这行贴到 issue 里**。
-
-不用等新版本：**所有配置都能直接写进 profile 的 `~/.dsh/profiles/web/cordis.patch.yml`**，这条路径不依赖任何界面。插件装上时已由自己的 bundle 层插入了 `web-search-free` 这一行，所以这里写的是**按 id 覆盖它的 config**（不要再写 `insert`，那会插出重复的行）：
+找不到卡片时（浏览器控制台会打印 `[web-search-free] no settings card mounted: …`，欢迎贴到 issue），可以直接编辑 `~/.dsh/profiles/web/cordis.patch.yml`。插件安装时已插入 `web-search-free` 行，这里**按 id 覆盖它的 config**，不要再写 `insert`：
 
 ```yaml
 - id: web-search-free
@@ -149,79 +135,40 @@ dsh 的插件配置界面还在快速演进，卡片所在的插槽名换过不�
     exaApiKey: |-
       key-1
       key-2
-    enableFetch: true
     providerOrder: [tavily, exa, tinyfish]
     searchStrategy: merge
-    region: CN
-    blockedDomains: |-
-      example-content-farm.com
 ```
 
-字段名与卡片一一对应（见 `src/index.ts` 的 `Config`）：`<引擎名>ApiKey`（多 Key 用多行字符串）、`enableFetch`、`providerOrder`，以及上面「高级设置」表里的字段。写完重启 dsh 生效。
-
-这里和卡片的关系随 dsh 版本而变：dsh ≥ 0.1.7 的卡片**就是往这个文件写**，两者是同一层，在卡片里保存会覆盖你手写的同名字段；dsh ≤ 0.1.6 的卡片写的是另一份设置文档（`~/.dsh/settings.yaml`），那边的值属于用户层，会盖住这里的 base 值。
+字段名见 `src/index.ts` 的 `Config`：`<引擎>ApiKey`（多个 Key 用多行字符串）、`enableFetch`、`providerOrder` 以及上表字段。改完重启 dsh 生效。dsh ≥ 0.1.7 的卡片也写这个文件，保存时会覆盖同名字段。
 
 ### 升级到 dsh 0.1.7 后 Key 不见了
 
-配置的存放位置在 dsh 0.1.7 变了：≤ 0.1.6 存在 `~/.dsh/settings.yaml`，≥ 0.1.7 存进 profile 的 `cordis.patch.yml`。dsh 自己会做一次迁移——把 `settings.yaml` 改名为 `settings.yaml.imported` 并把各段写进同 id 的 entry——但它**只跑一次**，而且只接受当时运行组合里认识的段落。
-
-升级那一刻本插件如果起不来（1.5.x 在 0.1.7 上会让整个 Web 界面停在 "Failed to load plugins"），它就正好会被跳过，Key 留在改名后的文件里没人管。
-
-**数据没丢**，在 dsh 主目录（默认 `~/.dsh`）的 `settings.yaml.imported` 里。插件检测到这种情况时会在启动日志里说明，卡片上也会显示同样的提示。最省事的办法是把这段话发给 dsh 让它代劳：
+dsh 0.1.7 把配置从 `~/.dsh/settings.yaml` 迁移到 profile 的 `cordis.patch.yml`，迁移只跑一次。如果当时插件没能启动（1.5.x 在 0.1.7 上会卡在 "Failed to load plugins"），Key 会留在 `~/.dsh/settings.yaml.imported` 里。插件检测到这种情况时，会在日志和卡片上提示。可以在卡片里重新填 Key，或者把下面这段交给 dsh：
 
 > 把 dsh 主目录（默认 ~/.dsh）下 settings.yaml.imported 里 web-search-free 段的所有字段，原样写进当前 profile 的 cordis.patch.yml，作为 id 为 web-search-free 的 entry 的 config；该 entry 不存在就新增。保留原文件的注释和格式，改动前先备份。
-
-也可以照上面那段 YAML 的格式自己手抄过去，或者干脆在卡片里重新输一遍。
-
-## 验证
-
-启动 `dsh web`，在对话里让模型搜索或抓取（「搜一下今天的新闻」「抓取 https://example.com 的内容」）。某个引擎失败时日志里会出现 `Provider <name> ... failed. Trying next provider ...`，随后自动尝试下一个。
 
 ## 更新与卸载
 
 ```sh
-dsh plugin --profile web update dsh-web-search-free    # 升级
-dsh plugin --profile web remove dsh-web-search-free    # 卸载
+dsh plugin --profile web update dsh-web-search-free
+dsh plugin --profile web remove dsh-web-search-free
 ```
 
-两者都会触发对账：卸载后 web 搜索/抓取**回落到 dsh-base 的 `deepseek-official` 默认通道**，无需手改 profile。
+卸载后 web 搜索/抓取回落到 `deepseek-official`。注意：
 
-卸载前后有两点要注意：
-
-- **先点卡片底部的「清空全部配置」**。dsh 的卸载流程不会删设置命名空间里的东西，你的 API Key 会留在 `$DSH_HOME/settings.yaml`。这个按钮会清掉本插件写入的所有值（需点两次确认）。
-- **卸载后要重启 dsh**。`web` 行的 provider 选择是启动时组合出来的，重启前搜索会报 `WEB_PROVIDER_CONFIGURED_MISSING`。
+- **卸载前先点卡片底部「清空全部配置」**，否则 Key 会留在 dsh 的配置文件里。
+- **卸载后重启 dsh**，否则搜索会报 `WEB_PROVIDER_CONFIGURED_MISSING`。
 
 ## 工作原理
 
-本插件是一个 dsh **bundle 层**（`package.json` 声明 `dsh.bundle.patch: ./cordis.patch.yml`）。patch 做两件事：`insert` 一行 `web-search-free` 把宿主半边纳入组合，再用一条同 id 的 `web` 覆盖层把 `searchProvider` 与 `fetchProvider` 都重指到 `web-search-free`，盖过 `dsh-base` 钉死的 `deepseek-official`。
+插件是一个 dsh bundle 层：`cordis.patch.yml` 插入 `web-search-free` 行，并把 `web` 行的 `searchProvider` / `fetchProvider` 指向它。宿主半边（`src/index.ts`）注册搜索与抓取 provider，按 `providerOrder` 依次调用；客户端半边（`src/client.tsx`）提供配置卡片。实现细节见源码注释。
 
-宿主半边（`src/index.ts`）向 `ctx.web` 注册搜索与抓取 provider，按 `providerOrder` 遍历「已配 Key」的引擎做 fallback。客户端半边（`src/client.tsx`）注册那张 React 配置卡片，读写同一命名空间 `web-search-free`。两层靠这个命名空间字符串对齐。
+开发提示：`@deepseek-ai/*` 不能进 `dependencies` 或非 optional 的 `peerDependencies`，否则会在用户 profile 里装出一份私有副本、遮蔽宿主实例。改动 `package.json` 后请运行 `pnpm run check`（发布前也会自动检查）。
 
-<details>
-<summary>更细的实现说明（点击展开）</summary>
+## 反馈
 
-**为什么不自己挂载 `tool-web`**：`web_fetch` 工具的挂载归组合层所有（dsh ≥ 0.1.5）——TUI/headless 下由 `dsh-base` 的 `tool-web` 行挂载，Web 界面上由每条 agent preset 各自挂载同名行。preset 文件由 dsh-agent-presets 从自己的根目录加载、不属于 profile patch 栈，bundle patch 够不到，也不需要够到：这些行都通过同一条能力通道（seam）取数，上面那条 `web` 覆盖层已把通道指向本插件。自挂载只会和 preset 行重复注册 `web_fetch`，而 per-agent 作用域会遮蔽全局注册，卸载自己的 fiber 也动不到 preset 那份。
-
-**`enableFetch` 为什么是 provider 开关**：它实现为抓取 provider 的**可用性**——seam 每次执行时读 `available()`，关闭后 `web_fetch` 仍在工具表里，但每次调用返回结构化的 `WEB_PROVIDER_CONFIGURED_UNAVAILABLE` 错误（dsh 官方语义）。切换即时生效，无需 watch 或重挂载。两个 provider 的注册接在 `ctx.effect` 上，插件禁用或热重载时会把自己从 seam 摘除，避免下次 apply 撞上 `WEB_DUPLICATE_PROVIDER`。
-
-**配置卡片如何跟上 dsh 的插槽改名**：客户端半边持有一张候选插槽表（`SLOT_CANDIDATES`），每个候选各用一次 `ctx.slots.inject`——它对宿主没有的槽名只是等待、不抛错，所以一份产物能同时适配多个 dsh 版本。一个仲裁器保证同一时刻只挂一张卡，即使某个过渡版本两个槽都在。都没等到时打印上面那行诊断。
-
-**设置接口如何跨代**：承载设置的服务也换过代——dsh ≥ 0.1.7 用 `configForms`（按 profile entry id 取表单），≤ 0.1.6 用 `settingsScope`（按注册的 namespace 绑定）。两者的 `getSnapshot` / `subscribe` / `set` / `unset` 同名同义，所以卡片本身对此无感。关键是**两个都不能写进顶层 `inject`**：宿主没有的 service 会让整个 entry 永远 pending，而 web boot 把「有 entry 没激活」当致命错误抛出（`web boot: 1 entry did not activate`），整个界面停在 "Failed to load plugins"。所以两者各用一个子 `ctx.inject()` fiber 去等——子 fiber 不是 loader entry，等不到也不影响启动，先到的那个挂卡。
-
-**Config 为什么全字段 `.volatile()`**：dsh ≥ 0.1.7 删掉了设置 namespace 注册表，插件 entry 自己的 Config 就是它的设置段，表单由标了 `.volatile()` 的字段投影而来——一个都不标，`volatileForm()` 返回 undefined，这个 entry 根本不会出现在浏览器的 describe 镜像里，卡片会永远显示"不可用"。而包装动作是 schemastery 在解析时做的、与宿主版本无关，所以 ≤ 0.1.6 那边 `settings.register` 必须拿到**未标注的那份** schema（否则每个字段都会变成 `{}`）。两份 schema 因此由同一张字段表派生，读值统一走 `liveConfig()` 解包。
-
-**构建为什么分两步**（包声明 `"type": "module"`）：`tsconfig.json`（`module: NodeNext`）把宿主半边编成 ESM 产物，与 dsh 运行时一致，避免 CJS `require()` 一个 ESM 依赖时的加载竞态；`tsconfig.client.json`（`module: CommonJS`）单独编出 `dist/client.js`，再由 `wrap-client.cjs` 包成 `window.__ModuleLoader__.load(...)`，交给 dsh 浏览器侧的模块加载器。
-
-**发布门禁**：插件装在 profile **旁边**，所有宿主服务必须解析到运行中 dsh 的那**一份**实例。任何 `@deepseek-ai/*` 一旦进了 `dependencies`（或非 optional 的 `peerDependencies`——pnpm 会自动装它），就会在用户 profile 里多出一份私有副本并遮蔽宿主那份，Cordis Service 身份不再相等。这类问题只在别人机器上出现，所以 `prepublishOnly` 会跑 `scripts/check-package.cjs` 挡在发布之前。改动 `package.json` 后请跑 `pnpm run check`。
-
-</details>
-
-## 反馈与更新
-
-上游 dsh 还在快速迭代，插槽位置、接口语义、组合方式都可能随版本变化，本插件难免会有跟不上的时候。遇到任何问题——卡片不显示、某个引擎报错、新版本 dsh 上行为不对——都欢迎提 [issue](https://github.com/MochiNek0/dsh-web-search-free/issues)，附上 dsh 版本号和报错信息即可。插件会持续跟进更新。
-
-感谢大家的支持 🙏
+dsh 仍在快速迭代，插件可能有跟不上的时候。遇到问题请提 [issue](https://github.com/MochiNek0/dsh-web-search-free/issues)，附上 dsh 版本和报错信息。
 
 ## 许可证
 
-MIT，见 [LICENSE](https://github.com/MochiNek0/dsh-web-search-free/blob/main/LICENSE)。
+[MIT](https://github.com/MochiNek0/dsh-web-search-free/blob/main/LICENSE)

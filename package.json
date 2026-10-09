@@ -1,7 +1,7 @@
 {
   "name": "dsh-web-search-free",
-  "version": "1.7.1",
-  "description": "Free web search plugin for dsh supporting firecrawl and tavily",
+  "version": "1.8.0",
+  "description": "Free web search & fetch plugin for DeepSeek Harness (dsh) with multi-engine fallback (Tavily, Exa, Brave, Baidu, SearXNG and more)",
   "keywords": [
     "dsh-plugin",
     "web-search"
