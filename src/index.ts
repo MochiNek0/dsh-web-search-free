@@ -32,6 +32,10 @@ export interface Config {
   tinyfishApiKey?: string
   serpapiApiKey?: string
   serpingapiApiKey?: string
+  /** SearXNG instance base URLs, one per line — the "key" of a keyless engine. */
+  searxngApiKey?: string
+  baiduApiKey?: string
+  volcengineApiKey?: string
   /**
    * Whether the model may use `web_fetch` at all. Search is always on.
    *
@@ -126,11 +130,14 @@ const configFields = () => ({
   tinyfishApiKey: Schema.string().description('API key(s) for TinyFish. One key per line for multi-key rotation.'),
   serpapiApiKey: Schema.string().description('API key(s) for SerpApi. One key per line for multi-key rotation.'),
   serpingapiApiKey: Schema.string().description('API key(s) for Serping API. One key per line for multi-key rotation.'),
+  searxngApiKey: Schema.string().description('SearXNG instance URL(s), e.g. https://searx.example.com. One per line, tried in order. The instance must enable the JSON format.'),
+  baiduApiKey: Schema.string().description('API key(s) for Baidu Qianfan AI Search (Qianfan V2 console). One key per line for multi-key rotation.'),
+  volcengineApiKey: Schema.string().description('API key(s) for Volcengine web search (from the web-search console; Ark keys do not work). One key per line for multi-key rotation.'),
   enableFetch: Schema.boolean().default(true).description('是否允许模型调用 web_fetch（URL 内容抓取）。web_fetch 工具由 dsh 统一挂载，关闭后调用会返回明确的错误提示，而不是从工具表移除；切换即时生效，无需重启。'),
   fetchSource: Schema.union([...FETCH_SOURCES]).default('providers')
     .description('web_fetch 由谁抓取：providers 用填了 Key 的引擎（都没有或都失败时退回 dsh 自带的本地抓取）；dsh 直接用 dsh 自带的本地抓取（免费，不经第三方，但不渲染 JS）。'),
-  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi']))
-    .default(['tinyfish', 'anysearch', 'tavily', 'brave', 'exa', 'firecrawl', 'serpapi', 'jina', 'serpingapi'])
+  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi', 'searxng', 'baidu', 'volcengine']))
+    .default(['tinyfish', 'searxng', 'anysearch', 'baidu', 'tavily', 'brave', 'exa', 'firecrawl', 'volcengine', 'serpapi', 'jina', 'serpingapi'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。'),
   searchStrategy: Schema.union([...SEARCH_STRATEGIES]).default('fallback')
     .description('搜索策略：fallback 逐个尝试（最省额度）；race 同时调用前 N 个引擎、取最快的；merge 同时调用前 N 个引擎并合并去重（召回最好，消耗 N 倍额度）。'),
@@ -272,6 +279,15 @@ function hintLegacySettings(settings: any, logger: any): void {
 /** Short, non-leaking token for log lines so a failing key is identifiable without printing it. */
 function maskKey(key: string): string {
   if (!key) return '***'
+  // A SearXNG "key" is an instance URL, not a secret: its host tells the
+  // instances apart, and dropping the rest leaves out any user:pass@ part.
+  if (/^https?:\/\//i.test(key)) {
+    try {
+      return new URL(key).host
+    } catch {
+      return '***'
+    }
+  }
   if (key.length <= 8) return '***'
   return `${key.slice(0, 4)}…${key.slice(-3)}`
 }
@@ -383,6 +399,32 @@ const FETCH_CACHE_ENTRIES = 30
  */
 export const STATS_ROUTE = '/api/web-search-free/stats'
 export const TEST_ROUTE = '/api/web-search-free/test-keys'
+export const UPDATE_ROUTE = '/api/web-search-free/check-update'
+
+/**
+ * This build's version, read from the shipped package.json (one level above
+ * `dist/`). Empty when unreadable, which only hides the version line.
+ */
+const PLUGIN_VERSION: string = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? ''
+  } catch {
+    return ''
+  }
+})()
+
+/** Where the update check asks for the latest published version. */
+const REGISTRY_LATEST_URL = 'https://registry.npmjs.org/dsh-web-search-free/latest'
+
+/** Whether dotted version `a` is newer than `b`, comparing the numeric x.y.z part only. */
+function isNewer(a: string, b: string): boolean {
+  const parse = (v: string) => v.split('-')[0].split('.').map((n) => Number(n) || 0)
+  const [x, y] = [parse(a), parse(b)]
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0)
+  }
+  return false
+}
 
 /** Query a key test runs. Neutral and certain to return results everywhere. */
 const TEST_QUERY = 'DeepSeek'
@@ -817,7 +859,7 @@ export function apply(ctx: Context, config: RawConfig) {
     }
     for (const { provider, keys } of getActiveProviders('search')) for (const key of keys) row(provider, key)
     if (usage.has('jina', '')) row(availableProviders.jina, '')
-    return { since: usage.since, cacheHits: usage.cacheHits, rows }
+    return { since: usage.since, cacheHits: usage.cacheHits, rows, version: PLUGIN_VERSION }
   }
 
   /**
@@ -879,5 +921,22 @@ export function apply(ctx: Context, config: RawConfig) {
         return testKeys(String(body?.engine ?? ''), body?.keys)
       },
     }), 'web-search-free: key test route')
+    // Asked from the Host rather than the browser, so the card itself still
+    // sends no request beyond dsh's own origin. Only on demand — a click.
+    cctx.effect(() => cctx.connection.fetch.register({
+      path: UPDATE_ROUTE,
+      methods: ['GET'],
+      requestBody: 'buffered',
+      fetch: async () => {
+        try {
+          const res = await fetch(REGISTRY_LATEST_URL, { signal: AbortSignal.timeout(8_000) })
+          if (!res.ok) throw new Error(`npm registry: ${res.status} ${res.statusText}`)
+          const latest = String((await res.json())?.version ?? '')
+          return jsonResponse(200, { current: PLUGIN_VERSION, latest, updateAvailable: isNewer(latest, PLUGIN_VERSION) })
+        } catch (err: any) {
+          return jsonResponse(502, { error: String(err?.message ?? err) })
+        }
+      },
+    }), 'web-search-free: update check route')
   })
 }

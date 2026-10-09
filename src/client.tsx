@@ -28,6 +28,9 @@ const PACKAGE_NAME = "dsh-web-search-free";
  * `caps.search` / `caps.fetch` drive the small capability chips on each row:
  * a search-only engine (Brave, Serping API, SerpApi) shows just "搜索", one that also
  * fetches shows "搜索 · 抓取". This mirrors `supportsFetch` on the host side.
+ *
+ * `placeholder` / `signupLabel` replace the key box's hint and the link text
+ * for an engine whose "key" is not an API key (SearXNG takes instance URLs).
  */
 type ProviderMeta = {
   key: string;
@@ -35,6 +38,8 @@ type ProviderMeta = {
   label: string;
   signup: string;
   caps: { search: true; fetch?: true };
+  placeholder?: TKey;
+  signupLabel?: TKey;
 };
 
 const PROVIDERS: ProviderMeta[] = [
@@ -46,11 +51,27 @@ const PROVIDERS: ProviderMeta[] = [
     caps: { search: true, fetch: true },
   },
   {
+    key: "searxng",
+    field: "searxngApiKey",
+    label: "SearXNG",
+    signup: "https://docs.searxng.org/admin/installation.html",
+    caps: { search: true },
+    placeholder: "row.placeholder.searxng",
+    signupLabel: "row.signup.searxng",
+  },
+  {
     key: "anysearch",
     field: "anysearchApiKey",
     label: "AnySearch",
     signup: "https://anysearch.com/pricing",
     caps: { search: true, fetch: true },
+  },
+  {
+    key: "baidu",
+    field: "baiduApiKey",
+    label: "Baidu Qianfan",
+    signup: "https://console.bce.baidu.com/iam/#/iam/apikey/list",
+    caps: { search: true },
   },
   {
     key: "tavily",
@@ -79,6 +100,13 @@ const PROVIDERS: ProviderMeta[] = [
     label: "Firecrawl",
     signup: "https://www.firecrawl.dev/",
     caps: { search: true, fetch: true },
+  },
+  {
+    key: "volcengine",
+    field: "volcengineApiKey",
+    label: "Volcengine (Doubao)",
+    signup: "https://console.volcengine.com/search-infinity/api-key",
+    caps: { search: true },
   },
   {
     key: "serpapi",
@@ -123,6 +151,7 @@ const normalizeKeys = (raw: string): string => parseKeys(raw).join("\n");
  */
 const STATS_PATH = "api/web-search-free/stats";
 const TEST_PATH = "api/web-search-free/test-keys";
+const UPDATE_PATH = "api/web-search-free/check-update";
 
 /** A host without the routes (dsh older than its exact-route registry). */
 class RoutesUnavailable extends Error {}
@@ -165,7 +194,10 @@ type Stats = {
   since: number;
   cacheHits: { search: number; fetch: number };
   rows: StatsRow[];
+  /** The Host half's package version; absent before 1.8.0. */
+  version?: string;
 };
+type UpdateCheck = { current: string; latest: string; updateAvailable: boolean };
 
 /**
  * The "Advanced" fields, mirroring the Host half's Config one for one (names,
@@ -335,6 +367,9 @@ const zh = {
   "row.dragTitle": "拖动调整调用顺序",
   "row.placeholder": "每行一个 API Key，支持多 Key 轮换",
   "row.signup": "获取 API Key ↗",
+  "row.placeholder.searxng":
+    "每行一个实例地址，例如 https://searx.example.com（实例需在 settings.yml 的 search.formats 里开启 json）",
+  "row.signup.searxng": "部署说明 ↗",
   "chain.label": "调用顺序",
   "chain.labelCount": "调用顺序 · {count} 个引擎（拖 ⋮⋮ 排序）",
   "chain.empty":
@@ -370,6 +405,15 @@ const zh = {
   "free.brave": "$5 额度/月（约 1000 次，需绑卡）",
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
+  "free.searxng": "自建实例，免费不限量",
+  "free.baidu": "每日免费额度（每日重置）",
+  "free.volcengine": "500 次/月",
+  "version.label": "版本 v{version}",
+  "version.check": "检查更新",
+  "version.checking": "检查中…",
+  "version.latest": "已是最新版本",
+  "version.available": "有新版本 v{latest}，运行 dsh plugin --profile web update dsh-web-search-free 升级",
+  "version.error": "检查失败：{error}",
   "adv.label": "高级设置",
   "test.button": "测试 Key",
   "test.busy": "测试中…",
@@ -489,6 +533,9 @@ const en: Record<keyof typeof zh, string> = {
   "row.dragTitle": "Drag to change the call order",
   "row.placeholder": "One API key per line, rotated across keys",
   "row.signup": "Get an API key ↗",
+  "row.placeholder.searxng":
+    "One instance URL per line, e.g. https://searx.example.com (the instance must enable json under search.formats in settings.yml)",
+  "row.signup.searxng": "Setup guide ↗",
   "chain.label": "Call order",
   "chain.labelCount": "Call order · {count} engine(s) (drag ⋮⋮ to sort)",
   "chain.empty":
@@ -520,6 +567,15 @@ const en: Record<keyof typeof zh, string> = {
   "free.brave": "$5 credit/month (≈1000 calls, card required)",
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
+  "free.searxng": "Self-hosted, free and unlimited",
+  "free.baidu": "Free daily quota (resets daily)",
+  "free.volcengine": "500 calls/month",
+  "version.label": "Version v{version}",
+  "version.check": "Check for updates",
+  "version.checking": "Checking…",
+  "version.latest": "Up to date",
+  "version.available": "v{latest} is available — run dsh plugin --profile web update dsh-web-search-free",
+  "version.error": "Check failed: {error}",
   "adv.label": "Advanced",
   "test.button": "Test keys",
   "test.busy": "Testing…",
@@ -836,6 +892,9 @@ type Snapshot = {
     tinyfishApiKey?: string;
     serpapiApiKey?: string;
     serpingapiApiKey?: string;
+    searxngApiKey?: string;
+    baiduApiKey?: string;
+    volcengineApiKey?: string;
     enableFetch?: boolean;
     providerOrder?: string[];
     /** The {@link ADVANCED} fields, read through `storedAdvanced`. */
@@ -911,6 +970,11 @@ function WebSearchFreeCard({
   const [statsError, setStatsError] = React.useState("");
   const [statsOpen, setStatsOpen] = React.useState(false);
   const [statsLoading, setStatsLoading] = React.useState(false);
+  // The update check's answer, or its error text; `null` until asked.
+  const [update, setUpdate] = React.useState<UpdateCheck | string | null>(
+    null,
+  );
+  const [checkingUpdate, setCheckingUpdate] = React.useState(false);
   const [testing, setTesting] = React.useState<Record<string, boolean>>({});
   const [tests, setTests] = React.useState<
     Record<string, KeyTest[] | string>
@@ -955,6 +1019,17 @@ function WebSearchFreeCard({
   React.useEffect(() => {
     if (view !== "summary") void loadStats();
   }, [loadStats, view]);
+
+  const checkUpdate = async () => {
+    setCheckingUpdate(true);
+    try {
+      setUpdate(await callRoute(UPDATE_PATH));
+    } catch (err: any) {
+      setUpdate(t("version.error", { error: err?.message ?? err }));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
 
   const testKeys = async (provider: ProviderMeta) => {
     setTesting((s) => ({ ...s, [provider.key]: true }));
@@ -1569,7 +1644,7 @@ function WebSearchFreeCard({
                 spellCheck: false,
                 value: keyDrafts[provider.field] ?? storedKey(provider.field),
                 disabled,
-                placeholder: t("row.placeholder"),
+                placeholder: t(provider.placeholder ?? "row.placeholder"),
                 onChange: (event: any) =>
                   setKeyDrafts({
                     ...keyDrafts,
@@ -1636,7 +1711,7 @@ function WebSearchFreeCard({
                       marginLeft: "auto",
                     },
                   },
-                  t("row.signup"),
+                  t(provider.signupLabel ?? "row.signup"),
                 ),
               ),
               routesOk && keyCount > 0 && (tests[key]?.length ?? 0) > 0
@@ -2233,6 +2308,58 @@ function WebSearchFreeCard({
                   : (stats?.rows ?? []).map(statsRow)),
               )
             : null,
+        ),
+      );
+    // Version and an on-demand update check. Needs the Host routes, and a
+    // Host new enough to report its version in the stats it already serves.
+    if (routesOk && stats?.version)
+      children.push(
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 10,
+              fontSize: 12,
+              color: "var(--dsw-alias-label-tertiary)",
+            },
+          },
+          t("version.label", { version: stats.version }),
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              disabled: checkingUpdate,
+              onClick: () => void checkUpdate(),
+              style: {
+                ...btnOutlineStyle,
+                fontSize: 11,
+                padding: "1px 8px",
+                ...(checkingUpdate ? { opacity: 0.6, cursor: "default" } : {}),
+              },
+            },
+            t(checkingUpdate ? "version.checking" : "version.check"),
+          ),
+          update === null
+            ? null
+            : React.createElement(
+                "span",
+                {
+                  style:
+                    typeof update === "string"
+                      ? { color: "var(--dsw-alias-label-error)" }
+                      : update.updateAvailable
+                        ? { color: "var(--dsw-alias-brand-primary)" }
+                        : {},
+                },
+                typeof update === "string"
+                  ? update
+                  : update.updateAvailable
+                    ? t("version.available", { latest: update.latest })
+                    : t("version.latest"),
+              ),
         ),
       );
     children.push(
