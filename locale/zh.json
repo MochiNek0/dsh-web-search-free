@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "免费网页搜索",
+    "description": "免费的网页搜索与内容抓取，多引擎自动 fallback（TinyFish、SearXNG、Tavily、Brave、Exa、百度等），不消耗模型 token。"
+  }
+}

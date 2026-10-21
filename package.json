@@ -2,6 +2,7 @@
   "name": "dsh-web-search-free",
   "version": "1.8.1",
   "description": "Free web search & fetch plugin for DeepSeek Harness (dsh) with multi-engine fallback (Tavily, Exa, Brave, Baidu, SearXNG and more)",
+  "icon": "./icon.svg",
   "keywords": [
     "dsh-plugin",
     "web-search"
@@ -35,7 +36,9 @@
   },
   "files": [
     "dist",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "icon.svg",
+    "locale/*.json"
   ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/"
@@ -49,6 +52,7 @@
       "types": "./dist/client.d.ts",
       "default": "./dist/client.js"
     },
+    "./locale/*.json": "./locale/*.json",
     "./package.json": "./package.json"
   },
   "koishi": {

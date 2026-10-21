@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Web Search Free",
+    "description": "Free web search and page fetching with multi-engine automatic fallback (TinyFish, SearXNG, Tavily, Brave, Exa, Baidu and more). Uses no model tokens."
+  }
+}
