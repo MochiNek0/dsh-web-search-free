@@ -1,6 +1,6 @@
 {
   "name": "dsh-web-search-free",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "Free web search & fetch plugin for DeepSeek Harness (dsh) with multi-engine fallback (Tavily, Exa, Brave, Baidu, SearXNG and more)",
   "icon": "./icon.svg",
   "keywords": [
