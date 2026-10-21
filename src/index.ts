@@ -37,6 +37,19 @@ export interface Config {
   baiduApiKey?: string
   volcengineApiKey?: string
   /**
+   * You.com Agents Search key(s) — optional: the free keyless tier needs none.
+   * With a key the engine rides the normal chain; without one it only answers
+   * when `keylessYoucomSearch` is on.
+   */
+  youcomApiKey?: string
+  /**
+   * Whether `web_search` may fall back to You.com's keyless free tier (100
+   * searches/day per IP, no signup) when every keyed engine failed or none
+   * is configured. Off by default, so nothing changes for existing setups;
+   * inert while a You.com key is set.
+   */
+  keylessYoucomSearch?: boolean
+  /**
    * Whether the model may use `web_fetch` at all. Search is always on.
    *
    * Since dsh 0.1.5 the tool itself is mounted by the composition — dsh-base's
@@ -133,10 +146,11 @@ const configFields = () => ({
   searxngApiKey: Schema.string().description('SearXNG instance URL(s), e.g. https://searx.example.com. One per line, tried in order. The instance must enable the JSON format.'),
   baiduApiKey: Schema.string().description('API key(s) for Baidu Qianfan AI Search (Qianfan V2 console). One key per line for multi-key rotation.'),
   volcengineApiKey: Schema.string().description('API key(s) for Volcengine web search (from the web-search console; Ark keys do not work). One key per line for multi-key rotation.'),
+  youcomApiKey: Schema.string().description('API key(s) for You.com Agents Search — optional. Leave empty to use the keyless free tier (100 searches/day per IP, no signup; turn it on with the advanced keyless-search fallback), set a key for higher limits. One key per line for multi-key rotation.'),
   enableFetch: Schema.boolean().default(true).description('是否允许模型调用 web_fetch（URL 内容抓取）。web_fetch 工具由 dsh 统一挂载，关闭后调用会返回明确的错误提示，而不是从工具表移除；切换即时生效，无需重启。'),
   fetchSource: Schema.union([...FETCH_SOURCES]).default('providers')
     .description('web_fetch 由谁抓取：providers 用填了 Key 的引擎（都没有或都失败时退回 dsh 自带的本地抓取）；dsh 直接用 dsh 自带的本地抓取（免费，不经第三方，但不渲染 JS）。'),
-  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi', 'searxng', 'baidu', 'volcengine']))
+  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi', 'searxng', 'baidu', 'volcengine', 'youcom']))
     .default(['tinyfish', 'searxng', 'anysearch', 'baidu', 'tavily', 'brave', 'exa', 'firecrawl', 'volcengine', 'serpapi', 'jina', 'serpingapi'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。'),
   searchStrategy: Schema.union([...SEARCH_STRATEGIES]).default('fallback')
@@ -159,6 +173,8 @@ const configFields = () => ({
     .description('Tavily 搜索深度：advanced 结果更相关，但每次消耗 2 credits。'),
   keylessJinaFetch: Schema.boolean().default(true)
     .description('所有带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（有速率限制）。没配抓取引擎时它就是唯一的抓取通道。'),
+  keylessYoucomSearch: Schema.boolean().default(false)
+    .description('所有带 Key 的搜索都失败（或没配任何 Key）时，用 You.com 的免 Key 免费层（100 次/天，按 IP 限速，无需注册）兜底。填了 You.com Key 时本开关无效（Key 引擎走正常调用链）。'),
   cacheMinutes: Schema.natural().max(60).default(10)
     .description('相同的搜索或抓取在这么多分钟内直接返回缓存，不再消耗额度。0 为关闭。缓存只在内存里，重启即清空。'),
 })
@@ -556,6 +572,18 @@ export function apply(ctx: Context, config: RawConfig) {
   }
 
   /**
+   * The keyless You.com attempt that ends the search chain, when the user
+   * opted in. You.com's free Agents tier needs no key (100 searches/day per
+   * IP), so this works with zero configuration; a configured You.com key
+   * rides the normal chain above instead, which makes the toggle inert.
+   */
+  function keylessYoucomAttempt(current: Config): Attempt[] {
+    if (current.keylessYoucomSearch !== true) return []
+    if (current.youcomApiKey?.trim()) return []
+    return [{ provider: availableProviders.youcom, key: '' }]
+  }
+
+  /**
    * Run one attempt under its own timeout. A failure benches the key when
    * {@link cooldownFor} says so, is logged, is added to `trail` for the
    * all-failed error, and is rethrown — except when
@@ -700,10 +728,12 @@ export function apply(ctx: Context, config: RawConfig) {
   // honored live — no watch/re-sync wiring is needed.
   ctx.effect(() => ctx.web?.registerSearchProvider({
     id: 'web-search-free',
-    available: () => getActiveProviders('search').length > 0,
+    available: () =>
+      getActiveProviders('search').length > 0 ||
+      keylessYoucomAttempt(resolved()).length > 0,
     async search(request: any, signal: any) {
       const current = resolved()
-      const attempts = orderedAttempts('search')
+      const attempts = [...orderedAttempts('search'), ...keylessYoucomAttempt(current)]
       if (attempts.length === 0) {
         throw new Error('No web search providers configured. Please set at least one API key in config.')
       }
