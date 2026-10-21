@@ -11,6 +11,7 @@ import { serpingapiProvider } from './serpingapi.js';
 import { searxngProvider } from './searxng.js';
 import { baiduProvider } from './baidu.js';
 import { volcengineProvider } from './volcengine.js';
+import { youcomProvider } from './youcom.js';
 
 // 注册所有可用的 Providers
 export const availableProviders: Record<string, WebSearchProvider> = {
@@ -26,4 +27,5 @@ export const availableProviders: Record<string, WebSearchProvider> = {
   serpapi: serpapiProvider,
   jina: jinaProvider,
   serpingapi: serpingapiProvider,
+  youcom: youcomProvider,
 };

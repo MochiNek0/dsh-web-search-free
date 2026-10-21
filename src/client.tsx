@@ -129,6 +129,15 @@ const PROVIDERS: ProviderMeta[] = [
     signup: "https://serpingapi.com/signup?ref=dsh-web-search-free",
     caps: { search: true },
   },
+  {
+    key: "youcom",
+    field: "youcomApiKey",
+    label: "You.com",
+    // Optional upgrade: the engine is keyless by default (see free.youcom).
+    signup: "https://you.com/platform?utm_source=mochinek0-dsh-web-search-free&utm_medium=oss_integration&utm_campaign=2026-10-oss-integrations&utm_content=config-card",
+    caps: { search: true },
+    placeholder: "row.placeholder.youcom",
+  },
 ];
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key);
 const byKey = (key: string) => PROVIDERS.find((p) => p.key === key)!;
@@ -279,6 +288,7 @@ const ADVANCED: AdvancedField[] = [
     def: "providers",
   },
   { field: "keylessJinaFetch", kind: "toggle", def: true },
+  { field: "keylessYoucomSearch", kind: "toggle", def: false },
   { field: "cacheMinutes", kind: "number", min: 0, max: 60, step: 5, def: 10 },
 ];
 
@@ -370,6 +380,8 @@ const zh = {
   "row.placeholder.searxng":
     "每行一个实例地址，例如 https://searx.example.com（实例需在 settings.yml 的 search.formats 里开启 json）",
   "row.signup.searxng": "部署说明 ↗",
+  "row.placeholder.youcom":
+    "可留空：留空并在高级设置开启免 Key 免费层（100 次/天）；填 Key（或设 YDC_API_KEY）提高限额，每行一个",
   "chain.label": "调用顺序",
   "chain.labelCount": "调用顺序 · {count} 个引擎（拖 ⋮⋮ 排序）",
   "chain.empty":
@@ -408,6 +420,7 @@ const zh = {
   "free.searxng": "自建实例，免费不限量",
   "free.baidu": "每日免费额度（每日重置）",
   "free.volcengine": "500 次/月",
+  "free.youcom": "100 次/天（免 Key，无需注册）",
   "version.label": "版本 v{version}",
   "version.check": "检查更新",
   "version.checking": "检查中…",
@@ -503,6 +516,9 @@ const zh = {
   "adv.keylessJinaFetch": "无 Key 抓取兜底",
   "adv.keylessJinaFetch.hint":
     "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）。没配任何抓取引擎时，它就是唯一的抓取通道。",
+  "adv.keylessYoucomSearch": "无 Key 搜索兜底",
+  "adv.keylessYoucomSearch.hint":
+    "没配任何搜索 Key，或带 Key 的引擎都失败时，用 You.com 的免 Key 免费层（100 次/天，按 IP 限速，无需注册）兜底。填了 You.com Key 时本开关无效（Key 引擎走正常调用链）。",
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -536,6 +552,8 @@ const en: Record<keyof typeof zh, string> = {
   "row.placeholder.searxng":
     "One instance URL per line, e.g. https://searx.example.com (the instance must enable json under search.formats in settings.yml)",
   "row.signup.searxng": "Setup guide ↗",
+  "row.placeholder.youcom":
+    "Optional: leave empty for the keyless free tier (100/day; turn it on under Advanced), or paste a key (or set YDC_API_KEY) for higher limits, one per line",
   "chain.label": "Call order",
   "chain.labelCount": "Call order · {count} engine(s) (drag ⋮⋮ to sort)",
   "chain.empty":
@@ -570,6 +588,7 @@ const en: Record<keyof typeof zh, string> = {
   "free.searxng": "Self-hosted, free and unlimited",
   "free.baidu": "Free daily quota (resets daily)",
   "free.volcengine": "500 calls/month",
+  "free.youcom": "100/day (keyless, no signup)",
   "version.label": "Version v{version}",
   "version.check": "Check for updates",
   "version.checking": "Checking…",
@@ -667,6 +686,9 @@ const en: Record<keyof typeof zh, string> = {
   "adv.keylessJinaFetch": "Keyless fetch fallback",
   "adv.keylessJinaFetch.hint":
     "When every keyed fetch fails, fall back to Jina Reader without a key (rate-limited; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch.",
+  "adv.keylessYoucomSearch": "Keyless search fallback",
+  "adv.keylessYoucomSearch.hint":
+    "When no search key is configured or every keyed engine failed, fall back to You.com's keyless free tier (100 searches/day per IP, no signup). Inert while a You.com key is set — the keyed engine rides the normal call order.",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { zh, en };
@@ -892,6 +914,7 @@ type Snapshot = {
     tinyfishApiKey?: string;
     serpapiApiKey?: string;
     serpingapiApiKey?: string;
+    youcomApiKey?: string;
     searxngApiKey?: string;
     baiduApiKey?: string;
     volcengineApiKey?: string;
