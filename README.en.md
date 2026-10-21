@@ -59,7 +59,13 @@ The table order is the default call order: most sustainable free calls first (un
 
 ## Installation
 
-Requires **dsh ≥ 0.1.2-rc.1** and `pnpm` on `PATH`. The card only appears in the Web UI, so install into the `web` profile:
+Requires **dsh ≥ 0.1.2-rc.1** and `pnpm` on `PATH`.
+
+**From the dsh app**: sidebar "Plugins" → "Add plugin" (top right) → enter `dsh-web-search-free` → "Install".
+
+![Adding the plugin in dsh](https://raw.githubusercontent.com/MochiNek0/dsh-web-search-free/main/docs/download.png)
+
+**Or from the command line.** The card only appears in the Web UI, so install into the `web` profile:
 
 ```sh
 dsh plugin --profile web add dsh-web-search-free

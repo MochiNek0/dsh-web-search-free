@@ -59,7 +59,13 @@
 
 ## 安装
 
-前置条件：**dsh ≥ 0.1.2-rc.1**，`pnpm` 在 `PATH` 上。配置卡片只在 Web 界面出现，因此一般装到 `web` profile：
+前置条件：**dsh ≥ 0.1.2-rc.1**，`pnpm` 在 `PATH` 上。
+
+**在 dsh 界面里安装**：侧边栏「插件」→ 右上角「添加插件」→ 输入 `dsh-web-search-free` → 「安装」。
+
+![在 dsh 中添加插件的步骤](https://raw.githubusercontent.com/MochiNek0/dsh-web-search-free/main/docs/download.png)
+
+**或用命令行安装**。配置卡片只在 Web 界面出现，因此一般装到 `web` profile：
 
 ```sh
 dsh plugin --profile web add dsh-web-search-free
