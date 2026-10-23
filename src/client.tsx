@@ -1,6 +1,19 @@
 import * as React from "react";
 
 /**
+ * The host's own hover tooltip, the same component every shipped header utility
+ * uses. It is answered by the browser module loader's seed table (like `react`),
+ * so it costs nothing to install and cannot be shadowed by a private copy —
+ * see `host-modules.d.ts` and the `check-package.cjs` gate.
+ *
+ * Using it instead of the `title` attribute is the difference between a themed
+ * dark bubble with a shortcut badge and the browser's grey box: the utilities
+ * this button sits beside render the former, so a `title` here reads as a
+ * foreign control in the same row.
+ */
+import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+
+/**
  * Must equal the namespace the Host half registers. Up to dsh 0.1.5 the Plugins
  * settings tab dispatched `settings.plugin.item` once per served namespace,
  * using it as the keyed slot's entry key.
@@ -280,6 +293,10 @@ const ADVANCED: AdvancedField[] = [
   },
   { field: "keylessJinaFetch", kind: "toggle", def: true },
   { field: "cacheMinutes", kind: "number", min: 0, max: 60, step: 5, def: 10 },
+  // Whether the Session-header shortcut is drawn. A real Host field (not local
+  // UI state) so the choice survives a reload and can be set from the profile's
+  // cordis.patch.yml before the card has ever been opened.
+  { field: "headerButton", kind: "toggle", def: true },
 ];
 
 /**
@@ -495,6 +512,9 @@ const zh = {
   "adv.tavilySearchDepth.hint": "advanced 结果更相关，但每次消耗 2 credits。",
   "opt.tavilySearchDepth.basic": "basic（1 credit）",
   "opt.tavilySearchDepth.advanced": "advanced（2 credits）",
+  "adv.headerButton": "对话页快捷按钮",
+  "adv.headerButton.hint":
+    "在对话标题栏右侧显示本插件的快捷入口，点开就能改这些设置。关掉后仍可从「插件 → web-search-free」进入。",
   "adv.fetchSource": "web_fetch 抓取来源",
   "adv.fetchSource.hint":
     "providers：用填了 Key 的引擎按顺序抓取，都没有或都失败时退回 dsh 自带的本地抓取。dsh：直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS，部分站点会被拦）。",
@@ -503,6 +523,13 @@ const zh = {
   "adv.keylessJinaFetch": "无 Key 抓取兜底",
   "adv.keylessJinaFetch.hint":
     "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）。没配任何抓取引擎时，它就是唯一的抓取通道。",
+  "shortcut.title": "网页搜索",
+  "shortcut.open": "打开网页搜索设置",
+  "shortcut.close": "关闭",
+  "shortcut.domains.show": "展开",
+  "shortcut.domains.hide": "收起",
+  "shortcut.domains.summary": "屏蔽 {blocked} 个 · 优先 {preferred} 个",
+  "group.domains": "域名过滤",
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -659,6 +686,9 @@ const en: Record<keyof typeof zh, string> = {
     "Advanced returns more relevant results but costs 2 credits per search.",
   "opt.tavilySearchDepth.basic": "basic (1 credit)",
   "opt.tavilySearchDepth.advanced": "advanced (2 credits)",
+  "adv.headerButton": "Shortcut on the conversation header",
+  "adv.headerButton.hint":
+    "Shows this plugin's shortcut at the right of a Session's title row; opening it edits these settings. Turning it off leaves the Plugins → web-search-free entry as the only way in.",
   "adv.fetchSource": "web_fetch source",
   "adv.fetchSource.hint":
     "providers: the keyed engines fetch in call order, falling back to dsh's own local fetcher when none is configured or all fail. dsh: always use dsh's own local fetcher (free, the URL goes to no third party, but no JS rendering, and some sites block it).",
@@ -667,6 +697,13 @@ const en: Record<keyof typeof zh, string> = {
   "adv.keylessJinaFetch": "Keyless fetch fallback",
   "adv.keylessJinaFetch.hint":
     "When every keyed fetch fails, fall back to Jina Reader without a key (rate-limited; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch.",
+  "shortcut.title": "Web Search",
+  "shortcut.open": "Open web search settings",
+  "shortcut.close": "Close",
+  "shortcut.domains.show": "Show",
+  "shortcut.domains.hide": "Hide",
+  "shortcut.domains.summary": "{blocked} blocked · {preferred} preferred",
+  "group.domains": "Domain filters",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { zh, en };
@@ -747,6 +784,23 @@ const SLOT_CANDIDATES: { name: string; options: Record<string, unknown> }[] = [
   // No `view` prop there, so the card falls back to its own collapsible header.
   { name: "settings.plugin.item", options: { key: NAMESPACE } },
 ];
+
+/**
+ * The Session title row's right-aligned utilities. This is the ONE seat a
+ * plugin can add a button-shaped control to in that row: `header.actions` sits
+ * beside the title on the left, `header.corner` is a `single` seat already
+ * occupied by the host, and the tab strip below the title (`conversation.view`)
+ * only renders tabs, not buttons.
+ */
+const SHORTCUT_SLOT = "conversation.session.header.utilities";
+
+/**
+ * The frame-wide floating layer the shortcut's popover is drawn in: "above
+ * every column and outside their scroll containers". A popover anchored inside
+ * the header would otherwise live under that row's `container-type: inline-size`
+ * containment and under any `overflow` a later dsh adds there.
+ */
+const SHORTCUT_OVERLAY_SLOT = "shell.overlay";
 
 /** Flatten the live declaration tree into the slot names it contains. */
 const declaredSlotNames = (nodes: any[], into: string[] = []): string[] => {
@@ -862,6 +916,41 @@ function mountCard(ctx: any, scope: any) {
       };
     });
   }
+
+  // The Session-header shortcut is independent of the settings seat: the two
+  // can appear in any combination, so it registers on its own. `inject` waits
+  // for the declaration, exactly as above, which is why an older dsh that
+  // never declares this slot simply gets no button instead of a thrown
+  // registration error.
+  ctx.slots.inject(SHORTCUT_SLOT, () =>
+    ctx.slots.register(
+      {
+        name: SHORTCUT_SLOT,
+        id: NAMESPACE,
+        // The shipped utilities sit at -10 (open-in-app), -5, 0, then 10/20.
+        // -20 puts this button at the leading edge of the cluster, i.e. left of
+        // every shipped icon and inline with them.
+        order: -20,
+        label: () => "Web Search",
+        inject: () => ({ scope, locale: ctx.reflect.get("locale") }),
+      },
+      WebSearchShortcutButton,
+    ),
+  );
+
+  // The panel is a frame-wide floating layer rather than a child of the button:
+  // `shell.overlay` sits above every column and outside their scroll
+  // containers, so the popover cannot be clipped by the header's containment.
+  ctx.slots.inject(SHORTCUT_OVERLAY_SLOT, () =>
+    ctx.slots.register(
+      {
+        name: SHORTCUT_OVERLAY_SLOT,
+        id: NAMESPACE,
+        inject: () => ({ scope, locale: ctx.reflect.get("locale") }),
+      },
+      WebSearchShortcutPanel,
+    ),
+  );
 
   // A dsh that renamed the seat again leaves the card silently invisible, which
   // reads as "the plugin is broken". Say so once, with the slot names this dsh
@@ -2753,5 +2842,760 @@ function text(value: string) {
     "span",
     { style: { fontSize: 13, color: "var(--dsw-alias-label-tertiary)" } },
     value,
+  );
+}
+
+/**
+ * The Session-header shortcut: one icon button in `conversation.session.header
+ * .utilities` that opens the plugin's settings in a popover.
+ *
+ * Why a popover and not a registered Conversation View: the view slot renders
+ * as a TAB beside Chat and Trajectory, so it would claim a permanent tab in
+ * every Session. Configuration is occasional, so it earns a button, not a tab.
+ *
+ * The panel is a LAYOUT of the same field specs the card renders (`ADVANCED`,
+ * `PRESETS`, `coerceAdvanced`), not a second copy of them. What differs is
+ * density only: hints move into the label's `title` instead of occupying a
+ * paragraph, and rows are label-left / control-right, because the whole panel
+ * has to stay under ~600px.
+ *
+ * Visibility reads the STORED `headerButton`, never the draft: deriving it from
+ * the draft would make the switch hide the very panel it lives in the moment
+ * the user clicked it.
+ */
+
+/** Popover width: one label column plus one control column, nothing wasted. */
+const SHORTCUT_WIDTH = 400;
+
+/**
+ * Field order in the panel. A flat list, not groups: the three section captions
+ * the card uses ("search strategy" / "result targeting" / "output") label
+ * groups of three to five rows each, which in a 400px popover is more chrome
+ * than content. The `group.*` strings remain for the card.
+ *
+ * `parallelEngines` is filtered out at render time when the strategy is
+ * `fallback`, matching the card.
+ */
+const SHORTCUT_FIELDS: readonly string[] = [
+  "searchStrategy",
+  "parallelEngines",
+  "region",
+  "language",
+  "freshness",
+  "snippetLength",
+  "tavilySearchDepth",
+  "fetchSource",
+  "keylessJinaFetch",
+  "cacheMinutes",
+  "headerButton",
+];
+
+/**
+ * Width of the label column, sized for the longest shipped label
+ * ("web_fetch 抓取来源" — 10 Latin + 4 CJK at 12px). Narrower and that row wraps
+ * to two lines while every other row stays one; wider wastes room on all of
+ * them.
+ */
+const SHORTCUT_LABEL_WIDTH = 116;
+
+const specOf = (field: string): AdvancedField | undefined =>
+  ADVANCED.find((spec) => spec.field === field);
+
+/** Count entries in a one-per-line list, for the collapsed domain summary. */
+const countLines = (raw: unknown): number =>
+  typeof raw === "string"
+    ? raw.split("\n").filter((line) => line.trim() !== "").length
+    : 0;
+
+/**
+ * Shared open state and anchor geometry between the two halves of the shortcut.
+ *
+ * The BUTTON is registered in `conversation.session.header.utilities`, the
+ * PANEL in `shell.overlay`, so neither can reach the other through props — the
+ * overlay is a sibling at the frame root. A module-level store is the smallest
+ * thing that spans them.
+ *
+ * `shell.overlay` is the frame's list of floating layers: above every column
+ * and outside their scroll containers, which is exactly what a popover needs.
+ * Anchoring the panel inside the header instead would place it under the title
+ * row's `container-type: inline-size` containment and under whatever `overflow`
+ * a later dsh adds to that row.
+ */
+const shortcutOpen = (() => {
+  let open = false;
+  let anchor: HTMLElement | null = null;
+  const listeners = new Set<() => void>();
+  const emit = () => {
+    for (const listener of listeners) listener();
+  };
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    isOpen: () => open,
+    getAnchor: () => anchor,
+    setAnchor(element: HTMLElement | null) {
+      anchor = element;
+    },
+    setOpen(next: boolean) {
+      if (open === next) return;
+      open = next;
+      emit();
+    },
+  };
+})();
+
+/** One advanced field's resolved value: the draft if any, else the stored one. */
+const storedField = (snapshot: Snapshot, spec: AdvancedField): unknown =>
+  snapshot.value?.[spec.field] ?? spec.def;
+
+/**
+ * The Session-header shortcut button.
+ *
+ * Visibility reads the STORED `headerButton`, never a draft: deriving it from
+ * the switch inside its own panel would make that switch hide the panel the
+ * moment the user clicked it.
+ */
+function WebSearchShortcutButton({
+  scope,
+  locale,
+}: {
+  scope: any;
+  locale?: any;
+}) {
+  const snapshot: Snapshot = React.useSyncExternalStore(
+    React.useCallback(
+      (listener: () => void) => scope.subscribe(listener),
+      [scope],
+    ),
+    () => scope.getSnapshot(),
+  );
+  const lang = useLang(locale);
+  const t = React.useMemo(() => translate(lang), [lang]);
+  const open = React.useSyncExternalStore(
+    shortcutOpen.subscribe,
+    shortcutOpen.isOpen,
+  );
+
+  // The anchor is captured through a callback ref, and cleared on unmount so the
+  // panel's dismissal check never compares against a detached node.
+  const attach = React.useCallback((element: HTMLElement | null) => {
+    shortcutOpen.setAnchor(element);
+  }, []);
+
+  if (storedField(snapshot, specOf("headerButton")!) === false) return null;
+
+  return React.createElement(
+    "span",
+    {
+      ref: attach,
+      style: { display: "inline-flex", flex: "none", alignItems: "center" },
+    },
+    // The host tooltip — same component, same side and delay as the shipped
+    // utilities in this row, so the bubble is the themed one with no shortcut
+    // badge rather than the browser's `title` box. `portal` keeps it out of the
+    // title row's containment, matching how the neighbours render.
+    React.createElement(
+      Tooltip,
+      {
+        label: t("shortcut.open"),
+        side: "bottom",
+        delayMs: 500,
+        portal: true,
+      },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          "aria-label": t("shortcut.open"),
+          "aria-haspopup": "dialog",
+          "aria-expanded": open,
+          onClick: () => shortcutOpen.setOpen(!open),
+          style: {
+            appearance: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 24,
+            height: 24,
+            padding: 0,
+            border: "1px solid transparent",
+            borderRadius: 8,
+            cursor: "pointer",
+            background: open
+              ? "var(--dsw-alias-interactive-bg-hover)"
+              : "none",
+            color: open
+              ? "var(--dsw-alias-label-primary)"
+              : "var(--dsw-alias-label-secondary)",
+          },
+        },
+        searchIcon(),
+      ),
+    ),
+  );
+}
+
+/**
+ * The shortcut's panel, laid out for density rather than for a settings page.
+ *
+ * It is a LAYOUT of the same field specs the card renders (`ADVANCED`,
+ * `PRESETS`, `coerceAdvanced`) — not a second copy of them. What differs is
+ * packing: hints move into each label's `title` instead of taking a paragraph,
+ * related fields share a two-column grid, and the two tall domain textareas
+ * collapse behind a count. That keeps the whole thing near 560px instead of the
+ * ~1200px the card's one-field-per-row form needs.
+ *
+ * Mounted unconditionally and returning null while closed, so drafts survive a
+ * close/reopen instead of being discarded when the user clicks elsewhere.
+ */
+function WebSearchShortcutPanel({
+  scope,
+  locale,
+}: {
+  scope: any;
+  locale?: any;
+}) {
+  const open = React.useSyncExternalStore(
+    shortcutOpen.subscribe,
+    shortcutOpen.isOpen,
+  );
+  const snapshot: Snapshot = React.useSyncExternalStore(
+    React.useCallback(
+      (listener: () => void) => scope.subscribe(listener),
+      [scope],
+    ),
+    () => scope.getSnapshot(),
+  );
+  const lang = useLang(locale);
+  const t = React.useMemo(() => translate(lang), [lang]);
+
+  const [drafts, setDrafts] = React.useState<Record<string, unknown>>({});
+  const [domainsOpen, setDomainsOpen] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [failed, setFailed] = React.useState("");
+  const [anchorRect, setAnchorRect] = React.useState<{
+    top: number;
+    right: number;
+  } | null>(null);
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+
+  // Track the button's box while open. The header does not scroll, but the
+  // conversation behind it can, and a resize moves the utilities cluster.
+  React.useEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const anchor = shortcutOpen.getAnchor();
+      if (!anchor) return;
+      const box = anchor.getBoundingClientRect();
+      setAnchorRect({
+        top: box.bottom + 6,
+        right: Math.max(8, window.innerWidth - box.right),
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [open]);
+
+  // Dismiss on outside press and on Escape, while open only.
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (panelRef.current?.contains(target)) return;
+      if (shortcutOpen.getAnchor()?.contains(target)) return;
+      shortcutOpen.setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") shortcutOpen.setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const value = (spec: AdvancedField): unknown =>
+    spec.field in drafts ? drafts[spec.field] : storedField(snapshot, spec);
+
+  const dirtySpecs = ADVANCED.filter(
+    (spec) =>
+      spec.field in drafts &&
+      JSON.stringify(coerceAdvanced(spec, drafts[spec.field])) !==
+        JSON.stringify(storedField(snapshot, spec)),
+  );
+  const disabled = saving || snapshot.writable === false;
+
+  const save = async () => {
+    setSaving(true);
+    setFailed("");
+    for (const spec of dirtySpecs) {
+      const next = coerceAdvanced(spec, drafts[spec.field]);
+      if (JSON.stringify(next) === JSON.stringify(spec.def))
+        await scope.unset(spec.field);
+      else await scope.set(spec.field, next);
+    }
+    // Writes swallow wire failures and reload instead of throwing, so the
+    // Host's readback is the only authority on what landed.
+    const after = scope.getSnapshot();
+    const stillDirty = dirtySpecs.some(
+      (spec) =>
+        JSON.stringify(
+          after.value?.[spec.field as keyof NonNullable<Snapshot["value"]>] ??
+            spec.def,
+        ) !== JSON.stringify(coerceAdvanced(spec, drafts[spec.field])),
+    );
+    setSaving(false);
+    if (stillDirty) setFailed(t("error.save"));
+    else {
+      setDrafts({});
+      shortcutOpen.setOpen(false);
+    }
+  };
+
+  if (!open) return null;
+
+  const setDraft = (field: string, next: unknown) =>
+    setDrafts({ ...drafts, [field]: next });
+
+  /**
+   * One field: label on the left at a fixed width, control right-aligned.
+   *
+   * The width is FIXED rather than `flex: 1` because the labels differ a lot in
+   * length ("时间范围" vs "Tavily 搜索深度"); letting the label grow pushed the
+   * controls to different x positions on every row. A fixed column plus
+   * `justify-content: flex-end` puts every control's right edge on the same
+   * line, which is what makes a stack of rows read as a table.
+   */
+  const field = (spec: AdvancedField) => {
+    const current = value(spec);
+    const id = `wsf-pop-${spec.field}`;
+    const label = React.createElement(
+      "label",
+      {
+        htmlFor: id,
+        title: t(`adv.${spec.field}.hint` as TKey),
+        style: {
+          flex: "none",
+          width: SHORTCUT_LABEL_WIDTH,
+          fontSize: 12,
+          lineHeight: 1.35,
+          cursor: "help",
+          color: "var(--dsw-alias-label-primary)",
+          fontWeight: 500,
+        },
+      },
+      t(`adv.${spec.field}` as TKey),
+    );
+    let control: React.ReactNode = null;
+    if (spec.kind === "select") {
+      control = React.createElement(
+        "select",
+        {
+          id,
+          disabled,
+          value: String(current),
+          onChange: (e: any) =>
+            setDraft(
+              spec.field,
+              spec.numeric ? Number(e.target.value) : e.target.value,
+            ),
+          style: { ...inputStyle, height: 28, padding: "0 6px", fontSize: 12 },
+        },
+        ...spec.options.map((option) =>
+          React.createElement(
+            "option",
+            { key: option, value: option },
+            spec.numeric ? option : t(`opt.${spec.field}.${option}` as TKey),
+          ),
+        ),
+      );
+    } else if (spec.kind === "number") {
+      control = React.createElement("input", {
+        id,
+        type: "number",
+        min: spec.min,
+        max: spec.max,
+        step: spec.step,
+        disabled,
+        value: String(current),
+        onChange: (e: any) => setDraft(spec.field, e.target.value),
+        style: { ...inputStyle, height: 28, width: 76, fontSize: 12 },
+      });
+    } else if (spec.kind === "toggle") {
+      control = toggleSwitch(current !== false, disabled, () =>
+        setDraft(spec.field, current === false),
+      );
+    }
+    return React.createElement(
+      "div",
+      {
+        key: spec.field,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          minWidth: 0,
+        },
+      },
+      label,
+      React.createElement(
+        "div",
+        {
+          style: {
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            justifyContent: "flex-end",
+          },
+        },
+        control,
+      ),
+    );
+  };
+
+  const domainField = (spec: AdvancedField) =>
+    React.createElement(
+      "div",
+      {
+        key: spec.field,
+        style: { display: "flex", flexDirection: "column", gap: 4 },
+      },
+      React.createElement(
+        "label",
+        {
+          htmlFor: `wsf-pop-${spec.field}`,
+          style: {
+            fontSize: 12,
+            fontWeight: 500,
+            color: "var(--dsw-alias-label-primary)",
+          },
+        },
+        t(`adv.${spec.field}` as TKey),
+      ),
+      React.createElement("textarea", {
+        id: `wsf-pop-${spec.field}`,
+        rows: 3,
+        spellCheck: false,
+        disabled,
+        value: String(value(spec) ?? ""),
+        placeholder: t("adv.domains.placeholder"),
+        onChange: (e: any) => setDraft(spec.field, e.target.value),
+        style: {
+          ...inputStyle,
+          width: "100%",
+          boxSizing: "border-box",
+          height: "auto",
+          minHeight: 28,
+          resize: "vertical",
+          padding: "5px 8px",
+          fontSize: 12,
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          lineHeight: "18px",
+        },
+      }),
+    );
+
+  const blockedSpec = specOf("blockedDomains")!;
+  const preferredSpec = specOf("preferredDomains")!;
+  const blockedCount = countLines(value(blockedSpec));
+  const preferredCount = countLines(value(preferredSpec));
+  // The engine count only matters to the two parallel strategies, matching the
+  // card's same rule.
+  const strategy = value(specOf("searchStrategy")!);
+
+  return React.createElement(
+    "div",
+    {
+      ref: panelRef,
+      role: "dialog",
+      "aria-label": t("shortcut.title"),
+      style: {
+        position: "fixed",
+        top: anchorRect?.top ?? 0,
+        right: anchorRect?.right ?? 8,
+        // Hidden until measured, so the panel never flashes at 0,0.
+        visibility: anchorRect ? "visible" : "hidden",
+        // `shell.overlay` is a click-through layer; every entry opts back in.
+        pointerEvents: "auto",
+        zIndex: 60,
+        width: SHORTCUT_WIDTH,
+        maxWidth: "calc(100vw - 16px)",
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: 12,
+        border: "1px solid var(--dsw-alias-border-l2)",
+        background: "var(--dsw-alias-bg-layer-2)",
+        boxShadow: "0 12px 28px rgba(0,0,0,.18)",
+        textAlign: "left",
+        cursor: "default",
+        fontFamily: "inherit",
+      },
+    },
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "12px 16px",
+          borderBottom: "1px solid var(--dsw-alias-border-l2)",
+        },
+      },
+      React.createElement(
+        "span",
+        {
+          style: {
+            flex: 1,
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--dsw-alias-label-primary)",
+          },
+        },
+        t("shortcut.title"),
+      ),
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          "aria-label": t("shortcut.close"),
+          onClick: () => shortcutOpen.setOpen(false),
+          style: {
+            appearance: "none",
+            border: 0,
+            background: "none",
+            cursor: "pointer",
+            padding: 2,
+            lineHeight: 0,
+            color: "var(--dsw-alias-label-tertiary)",
+          },
+        },
+        closeIcon(),
+      ),
+    ),
+    // Body — the only scrolling region.
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+          padding: "14px 16px",
+          maxHeight: "min(62vh, 560px)",
+          overflowY: "auto",
+        },
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 6,
+          },
+        },
+        ...PRESETS.map((preset) =>
+          React.createElement(
+            "button",
+            {
+              key: preset.id,
+              type: "button",
+              disabled,
+              onClick: () => setDrafts({ ...drafts, ...preset.patch }),
+              style: {
+                ...btnOutlineStyle,
+                fontSize: 11,
+                padding: "2px 9px",
+                borderRadius: 999,
+                ...roundCorners,
+                ...(disabled ? { opacity: 0.4, cursor: "default" } : {}),
+              },
+            },
+            t(`preset.${preset.id}` as TKey),
+          ),
+        ),
+      ),
+      ...SHORTCUT_FIELDS.map((name) => specOf(name))
+        .filter((spec): spec is AdvancedField => spec !== undefined)
+        .filter(
+          (spec) => spec.field !== "parallelEngines" || strategy !== "fallback",
+        )
+        .map(field),
+      // Domain filters: two tall textareas collapse into one summary line.
+      React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 6 } },
+        React.createElement(
+          "button",
+          {
+            type: "button",
+            onClick: () => setDomainsOpen(!domainsOpen),
+            "aria-expanded": domainsOpen,
+            style: {
+              ...groupLabelStyle,
+              appearance: "none",
+              border: 0,
+              background: "none",
+              padding: 0,
+              font: "inherit",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+              textAlign: "left",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            },
+          },
+          t("group.domains"),
+          React.createElement(
+            "span",
+            {
+              style: {
+                display: "inline-flex",
+                transition: "transform .16s",
+                transform: domainsOpen ? "rotate(180deg)" : "none",
+              },
+            },
+            caret(10),
+          ),
+          React.createElement(
+            "span",
+            {
+              style: {
+                marginLeft: "auto",
+                fontWeight: 400,
+                fontSize: 11,
+                color: "var(--dsw-alias-label-tertiary)",
+              },
+            },
+            domainsOpen
+              ? t("shortcut.domains.hide")
+              : t("shortcut.domains.summary", {
+                  blocked: blockedCount,
+                  preferred: preferredCount,
+                }),
+          ),
+        ),
+        domainsOpen
+          ? React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  paddingTop: 4,
+                },
+              },
+              domainField(blockedSpec),
+              domainField(preferredSpec),
+            )
+          : null,
+      ),
+    ),
+    // Footer — fixed, so Save never scrolls out of reach.
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "10px 16px",
+          borderTop: "1px solid var(--dsw-alias-border-l2)",
+        },
+      },
+      failed
+        ? React.createElement(
+            "span",
+            {
+              style: {
+                flex: 1,
+                fontSize: 11,
+                color: "var(--dsw-alias-label-error)",
+              },
+            },
+            failed,
+          )
+        : React.createElement("span", { style: { flex: 1 } }),
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          disabled: disabled || dirtySpecs.length === 0,
+          onClick: save,
+          style: {
+            ...btnPrimaryStyle,
+            fontSize: 12,
+            padding: "4px 12px",
+            ...(disabled || dirtySpecs.length === 0
+              ? { opacity: 0.4, cursor: "default" }
+              : {}),
+          },
+        },
+        t(saving ? "action.saving" : "action.save"),
+      ),
+    ),
+  );
+}
+
+/** The shortcut button's magnifier, sized for the 24px header cell. */
+function searchIcon() {
+  return React.createElement(
+    "svg",
+    {
+      width: 15,
+      height: 15,
+      viewBox: "0 0 16 16",
+      fill: "none",
+      "aria-hidden": true,
+    },
+    React.createElement("circle", {
+      cx: 7,
+      cy: 7,
+      r: 4.5,
+      stroke: "currentColor",
+      strokeWidth: 1.5,
+    }),
+    React.createElement("path", {
+      d: "M10.5 10.5L14 14",
+      stroke: "currentColor",
+      strokeWidth: 1.5,
+      strokeLinecap: "round",
+    }),
+  );
+}
+
+/** The panel's close affordance. */
+function closeIcon() {
+  return React.createElement(
+    "svg",
+    {
+      width: 14,
+      height: 14,
+      viewBox: "0 0 14 14",
+      fill: "none",
+      "aria-hidden": true,
+    },
+    React.createElement("path", {
+      d: "M3.5 3.5l7 7M10.5 3.5l-7 7",
+      stroke: "currentColor",
+      strokeWidth: 1.5,
+      strokeLinecap: "round",
+    }),
   );
 }
