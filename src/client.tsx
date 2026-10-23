@@ -516,9 +516,6 @@ const zh = {
   "shortcut.domains.show": "展开",
   "shortcut.domains.hide": "收起",
   "shortcut.domains.summary": "屏蔽 {blocked} 个 · 优先 {preferred} 个",
-  "group.search": "检索策略",
-  "group.result": "结果定位",
-  "group.output": "输出与抓取",
   "group.domains": "域名过滤",
 };
 
@@ -693,9 +690,6 @@ const en: Record<keyof typeof zh, string> = {
   "shortcut.domains.show": "Show",
   "shortcut.domains.hide": "Hide",
   "shortcut.domains.summary": "{blocked} blocked · {preferred} preferred",
-  "group.search": "Search strategy",
-  "group.result": "Result targeting",
-  "group.output": "Output and fetching",
   "group.domains": "Domain filters",
 };
 
@@ -2849,43 +2843,47 @@ function text(value: string) {
  * The panel is a LAYOUT of the same field specs the card renders (`ADVANCED`,
  * `PRESETS`, `coerceAdvanced`), not a second copy of them. What differs is
  * density only: hints move into the label's `title` instead of occupying a
- * paragraph, and fields sit in a two-column grid, because the whole panel has
- * to stay under ~600px.
+ * paragraph, and rows are label-left / control-right, because the whole panel
+ * has to stay under ~600px.
  *
  * Visibility reads the STORED `headerButton`, never the draft: deriving it from
  * the draft would make the switch hide the very panel it lives in the moment
  * the user clicked it.
  */
 
-/** Popover width. Wide enough for the two-column grid, narrow enough to sit
- * beside the header without covering the transcript. */
-const SHORTCUT_WIDTH = 440;
+/** Popover width: one label column plus one control column, nothing wasted. */
+const SHORTCUT_WIDTH = 400;
 
 /**
- * Which advanced fields share a row, in panel order. Fields NOT listed here
- * (the two domain lists and every toggle) render full width, because their
- * labels are long and a half-width switch reads as floating.
+ * Field order in the panel. A flat list, not groups: the three section captions
+ * the card uses ("search strategy" / "result targeting" / "output") label
+ * groups of three to five rows each, which in a 400px popover is more chrome
+ * than content. The `group.*` strings remain for the card.
+ *
+ * `parallelEngines` is filtered out at render time when the strategy is
+ * `fallback`, matching the card.
  */
-const SHORTCUT_GROUPS: { key: TKey; fields: readonly string[] }[] = [
-  { key: "group.search", fields: ["searchStrategy", "parallelEngines"] },
-  { key: "group.result", fields: ["region", "language", "freshness"] },
-  {
-    key: "group.output",
-    fields: [
-      "snippetLength",
-      "tavilySearchDepth",
-      "fetchSource",
-      "keylessJinaFetch",
-      "cacheMinutes",
-    ],
-  },
-];
-
-/** Fields the panel draws full width rather than in the two-column grid. */
-const SHORTCUT_FULL_WIDTH = new Set<string>([
+const SHORTCUT_FIELDS: readonly string[] = [
+  "searchStrategy",
+  "parallelEngines",
+  "region",
+  "language",
+  "freshness",
+  "snippetLength",
+  "tavilySearchDepth",
   "fetchSource",
   "keylessJinaFetch",
-]);
+  "cacheMinutes",
+  "headerButton",
+];
+
+/**
+ * Width of the label column, sized for the longest shipped label
+ * ("web_fetch 抓取来源" — 10 Latin + 4 CJK at 12px). Narrower and that row wraps
+ * to two lines while every other row stays one; wider wastes room on all of
+ * them.
+ */
+const SHORTCUT_LABEL_WIDTH = 116;
 
 const specOf = (field: string): AdvancedField | undefined =>
   ADVANCED.find((spec) => spec.field === field);
@@ -3143,7 +3141,15 @@ function WebSearchShortcutPanel({
   const setDraft = (field: string, next: unknown) =>
     setDrafts({ ...drafts, [field]: next });
 
-  /** One field, packed: the label carries the hint as its tooltip. */
+  /**
+   * One field: label on the left at a fixed width, control right-aligned.
+   *
+   * The width is FIXED rather than `flex: 1` because the labels differ a lot in
+   * length ("时间范围" vs "Tavily 搜索深度"); letting the label grow pushed the
+   * controls to different x positions on every row. A fixed column plus
+   * `justify-content: flex-end` puts every control's right edge on the same
+   * line, which is what makes a stack of rows read as a table.
+   */
   const field = (spec: AdvancedField) => {
     const current = value(spec);
     const id = `wsf-pop-${spec.field}`;
@@ -3153,9 +3159,10 @@ function WebSearchShortcutPanel({
         htmlFor: id,
         title: t(`adv.${spec.field}.hint` as TKey),
         style: {
-          flex: 1,
-          minWidth: 0,
+          flex: "none",
+          width: SHORTCUT_LABEL_WIDTH,
           fontSize: 12,
+          lineHeight: 1.35,
           cursor: "help",
           color: "var(--dsw-alias-label-primary)",
           fontWeight: 500,
@@ -3210,13 +3217,23 @@ function WebSearchShortcutPanel({
         style: {
           display: "flex",
           alignItems: "center",
-          gap: 10,
+          gap: 12,
           minWidth: 0,
-          gridColumn: SHORTCUT_FULL_WIDTH.has(spec.field) ? "1 / -1" : undefined,
         },
       },
       label,
-      control,
+      React.createElement(
+        "div",
+        {
+          style: {
+            flex: 1,
+            minWidth: 0,
+            display: "flex",
+            justifyContent: "flex-end",
+          },
+        },
+        control,
+      ),
     );
   };
 
@@ -3260,25 +3277,6 @@ function WebSearchShortcutPanel({
           lineHeight: "18px",
         },
       }),
-    );
-
-  const group = (title: TKey, rows: React.ReactNode) =>
-    React.createElement(
-      "div",
-      { style: { display: "flex", flexDirection: "column", gap: 6 } },
-      React.createElement("div", { style: groupLabelStyle }, t(title)),
-      React.createElement(
-        "div",
-        {
-          style: {
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            alignItems: "center",
-            gap: "10px 14px",
-          },
-        },
-        rows,
-      ),
     );
 
   const blockedSpec = specOf("blockedDomains")!;
@@ -3403,17 +3401,12 @@ function WebSearchShortcutPanel({
           ),
         ),
       ),
-      ...SHORTCUT_GROUPS.map((entry) => {
-        const fields = entry.fields
-          .map((name) => specOf(name))
-          .filter((spec): spec is AdvancedField => spec !== undefined)
-          .filter(
-            (spec) =>
-              spec.field !== "parallelEngines" || strategy !== "fallback",
-          );
-        if (fields.length === 0) return null;
-        return group(entry.key, fields.map(field));
-      }),
+      ...SHORTCUT_FIELDS.map((name) => specOf(name))
+        .filter((spec): spec is AdvancedField => spec !== undefined)
+        .filter(
+          (spec) => spec.field !== "parallelEngines" || strategy !== "fallback",
+        )
+        .map(field),
       // Domain filters: two tall textareas collapse into one summary line.
       React.createElement(
         "div",
