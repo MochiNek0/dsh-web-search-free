@@ -97,6 +97,8 @@ dsh plugin --profile web add .
 | ≥ 0.1.6  | 侧栏 **插件** → 「已安装」→ **web-search-free**         |
 | ≤ 0.1.5  | **设置 → 插件 → 插件配置 → 免费网页搜索**               |
 
+**也可以从对话页直接进入**：会话标题右侧那排图标的最左边是「网页搜索」快捷按钮，点开就是高级设置的弹层，不用绕到插件页。它注册在 `conversation.session.header.utilities`（`order: -20`，排在 dsh 自带图标之前），弹层挂在 `shell.overlay`，因此不会被标题栏的 containment 裁切。不想要它就在「高级设置 → 对话页快捷按钮」关掉（`headerButton`，默认开启）。
+
 1. **点击引擎行**展开，粘贴 Key（每行一个）；行内「获取 API Key ↗」直达申请页。
 2. **拖动 `⋮⋮` 手柄**调整「调用顺序」：靠前的先调，失败按序 fallback。
 3. 顶部开关 **「启用 web_fetch」**：关闭后模型调用 `web_fetch` 会收到明确的错误。

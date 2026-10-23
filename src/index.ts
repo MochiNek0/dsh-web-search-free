@@ -161,6 +161,8 @@ const configFields = () => ({
     .description('所有带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（有速率限制）。没配抓取引擎时它就是唯一的抓取通道。'),
   cacheMinutes: Schema.natural().max(60).default(10)
     .description('相同的搜索或抓取在这么多分钟内直接返回缓存，不再消耗额度。0 为关闭。缓存只在内存里，重启即清空。'),
+  headerButton: Schema.boolean().default(true)
+    .description('在对话页标题栏右侧显示快捷按钮，点开即可配置本插件，不必再进「插件」页。关闭后只保留插件页里的入口。'),
 })
 
 /**

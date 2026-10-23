@@ -97,6 +97,8 @@ Run `dsh web` and find the card:
 | ≥ 0.1.6     | Sidebar **Plugins** → "Installed" → **web-search-free**        |
 | ≤ 0.1.5     | **Settings → Plugins → Web Search Free**                       |
 
+**Or configure it straight from the conversation.** The leftmost icon in a Session title row's right-hand cluster is the Web Search shortcut; it opens the advanced settings in a popover, without a detour through the Plugins page. It registers in `conversation.session.header.utilities` (`order: -20`, so it sits before the shipped icons) and the popover mounts in `shell.overlay`, so the title row's containment cannot clip it. Turn it off under **Advanced → Shortcut on the conversation header** (`headerButton`, on by default).
+
 1. **Click an engine row** and paste keys (one per line); "Get an API key ↗" links to the signup page.
 2. **Drag the `⋮⋮` handle** to set the call order: higher rows go first, failing through in order.
 3. The **"Enable web_fetch"** switch at the top: when off, `web_fetch` calls return a clear error.
