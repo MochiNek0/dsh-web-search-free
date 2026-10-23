@@ -11,5 +11,5 @@
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx"
   },
-  "include": ["src/client.tsx"]
+  "include": ["src/client.tsx", "src/host-modules.d.ts"]
 }

@@ -33,8 +33,19 @@ const problems = []
  */
 const DEPENDABLE_SCOPED = new Set(['@deepseek-ai/schemastery'])
 
-/** Specifiers the browser module loader answers from its own seed table, never npm. */
-const CLIENT_SEED = new Set(['react'])
+/**
+ * Specifiers the browser module loader answers from its own seed table, never
+ * npm. `apps/web` builds this table (`staticModules`) and both entries here are
+ * in it, so `require()` resolves from the host's single instance — the opposite
+ * of the shadowing problem checks 1 and 2 guard against.
+ *
+ * Add a name only after confirming it appears in that table; anything else
+ * belongs in `dependencies` (a real npm package) or is a bug.
+ */
+const CLIENT_SEED = new Set([
+  'react',
+  '@deepseek-ai/dsh-client-ui-primitives',
+])
 
 // 1. No host package may enter `dependencies`.
 for (const name of Object.keys(pkg.dependencies ?? {})) {

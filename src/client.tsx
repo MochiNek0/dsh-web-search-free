@@ -1,6 +1,19 @@
 import * as React from "react";
 
 /**
+ * The host's own hover tooltip, the same component every shipped header utility
+ * uses. It is answered by the browser module loader's seed table (like `react`),
+ * so it costs nothing to install and cannot be shadowed by a private copy —
+ * see `host-modules.d.ts` and the `check-package.cjs` gate.
+ *
+ * Using it instead of the `title` attribute is the difference between a themed
+ * dark bubble with a shortcut badge and the browser's grey box: the utilities
+ * this button sits beside render the former, so a `title` here reads as a
+ * foreign control in the same row.
+ */
+import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+
+/**
  * Must equal the namespace the Host half registers. Up to dsh 0.1.5 the Plugins
  * settings tab dispatched `settings.plugin.item` once per served namespace,
  * using it as the keyed slot's entry key.
@@ -2981,33 +2994,47 @@ function WebSearchShortcutButton({
       ref: attach,
       style: { display: "inline-flex", flex: "none", alignItems: "center" },
     },
+    // The host tooltip — same component, same side and delay as the shipped
+    // utilities in this row, so the bubble is the themed one with no shortcut
+    // badge rather than the browser's `title` box. `portal` keeps it out of the
+    // title row's containment, matching how the neighbours render.
     React.createElement(
-      "button",
+      Tooltip,
       {
-        type: "button",
-        "aria-label": t("shortcut.open"),
-        "aria-haspopup": "dialog",
-        "aria-expanded": open,
-        title: t("shortcut.open"),
-        onClick: () => shortcutOpen.setOpen(!open),
-        style: {
-          appearance: "none",
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 24,
-          height: 24,
-          padding: 0,
-          border: "1px solid transparent",
-          borderRadius: 8,
-          cursor: "pointer",
-          background: open ? "var(--dsw-alias-interactive-bg-hover)" : "none",
-          color: open
-            ? "var(--dsw-alias-label-primary)"
-            : "var(--dsw-alias-label-secondary)",
-        },
+        label: t("shortcut.open"),
+        side: "bottom",
+        delayMs: 500,
+        portal: true,
       },
-      searchIcon(),
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          "aria-label": t("shortcut.open"),
+          "aria-haspopup": "dialog",
+          "aria-expanded": open,
+          onClick: () => shortcutOpen.setOpen(!open),
+          style: {
+            appearance: "none",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: 24,
+            height: 24,
+            padding: 0,
+            border: "1px solid transparent",
+            borderRadius: 8,
+            cursor: "pointer",
+            background: open
+              ? "var(--dsw-alias-interactive-bg-hover)"
+              : "none",
+            color: open
+              ? "var(--dsw-alias-label-primary)"
+              : "var(--dsw-alias-label-secondary)",
+          },
+        },
+        searchIcon(),
+      ),
     ),
   );
 }
