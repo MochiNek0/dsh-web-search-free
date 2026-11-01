@@ -1,17 +1,14 @@
 import * as React from "react";
 
-/**
- * The host's own hover tooltip, the same component every shipped header utility
- * uses. It is answered by the browser module loader's seed table (like `react`),
- * so it costs nothing to install and cannot be shadowed by a private copy —
- * see `host-modules.d.ts` and the `check-package.cjs` gate.
- *
- * Using it instead of the `title` attribute is the difference between a themed
- * dark bubble with a shortcut badge and the browser's grey box: the utilities
- * this button sits beside render the former, so a `title` here reads as a
- * foreign control in the same row.
- */
-import { Tooltip } from "@deepseek-ai/dsh-client-ui-primitives";
+// An optional host seed must not prevent the settings card from loading.
+let Tooltip:
+  | typeof import("@deepseek-ai/dsh-client-ui-primitives").Tooltip
+  | undefined;
+try {
+  Tooltip = require("@deepseek-ai/dsh-client-ui-primitives")?.Tooltip;
+} catch {
+  // Hosts without this seed still get a button with a native title.
+}
 
 /**
  * Must equal the namespace the Host half registers. Up to dsh 0.1.5 the Plugins
@@ -2867,28 +2864,8 @@ function text(value: string) {
 /** Popover width: one label column plus one control column, nothing wasted. */
 const SHORTCUT_WIDTH = 400;
 
-/**
- * Field order in the panel. A flat list, not groups: the three section captions
- * the card uses ("search strategy" / "result targeting" / "output") label
- * groups of three to five rows each, which in a 400px popover is more chrome
- * than content. The `group.*` strings remain for the card.
- *
- * `parallelEngines` is filtered out at render time when the strategy is
- * `fallback`, matching the card.
- */
-const SHORTCUT_FIELDS: readonly string[] = [
-  "searchStrategy",
-  "parallelEngines",
-  "region",
-  "language",
-  "freshness",
-  "snippetLength",
-  "tavilySearchDepth",
-  "fetchSource",
-  "keylessJinaFetch",
-  "cacheMinutes",
-  "headerButton",
-];
+// Domains have their own collapsible section; every other field follows ADVANCED.
+const SHORTCUT_FIELDS = ADVANCED.filter((spec) => spec.kind !== "domains");
 
 /**
  * Width of the label column, sized for the longest shipped label
@@ -2922,7 +2899,6 @@ const countLines = (raw: unknown): number =>
  * a later dsh adds to that row.
  */
 const shortcutOpen = (() => {
-  let open = false;
   let anchor: HTMLElement | null = null;
   const listeners = new Set<() => void>();
   const emit = () => {
@@ -2935,14 +2911,15 @@ const shortcutOpen = (() => {
         listeners.delete(listener);
       };
     },
-    isOpen: () => open,
     getAnchor: () => anchor,
-    setAnchor(element: HTMLElement | null) {
-      anchor = element;
+    toggle(element: HTMLElement) {
+      anchor = anchor === element ? null : element;
+      emit();
     },
-    setOpen(next: boolean) {
-      if (open === next) return;
-      open = next;
+    close(element?: HTMLElement) {
+      // Detaching a different column's button must not close the active panel.
+      if (!anchor || (element && anchor !== element)) return;
+      anchor = null;
       emit();
     },
   };
@@ -2975,18 +2952,54 @@ function WebSearchShortcutButton({
   );
   const lang = useLang(locale);
   const t = React.useMemo(() => translate(lang), [lang]);
-  const open = React.useSyncExternalStore(
+  const activeAnchor = React.useSyncExternalStore(
     shortcutOpen.subscribe,
-    shortcutOpen.isOpen,
+    shortcutOpen.getAnchor,
   );
+  const anchorRef = React.useRef<HTMLElement | null>(null);
+  const open = activeAnchor !== null && activeAnchor === anchorRef.current;
 
-  // The anchor is captured through a callback ref, and cleared on unmount so the
-  // panel's dismissal check never compares against a detached node.
+  // Only the clicked button owns the panel; mounts do not select an anchor.
   const attach = React.useCallback((element: HTMLElement | null) => {
-    shortcutOpen.setAnchor(element);
+    if (anchorRef.current && anchorRef.current !== element)
+      shortcutOpen.close(anchorRef.current);
+    anchorRef.current = element;
   }, []);
 
   if (storedField(snapshot, specOf("headerButton")!) === false) return null;
+
+  const button = React.createElement(
+    "button",
+    {
+      type: "button",
+      title: Tooltip ? undefined : t("shortcut.open"),
+      "aria-label": t("shortcut.open"),
+      "aria-haspopup": "dialog",
+      "aria-expanded": open,
+      onClick: () => {
+        if (anchorRef.current) shortcutOpen.toggle(anchorRef.current);
+      },
+      style: {
+        appearance: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 24,
+        height: 24,
+        padding: 0,
+        border: "1px solid transparent",
+        borderRadius: 8,
+        cursor: "pointer",
+        background: open
+          ? "var(--dsw-alias-interactive-bg-hover)"
+          : "none",
+        color: open
+          ? "var(--dsw-alias-label-primary)"
+          : "var(--dsw-alias-label-secondary)",
+      },
+    },
+    searchIcon(),
+  );
 
   return React.createElement(
     "span",
@@ -2994,48 +3007,19 @@ function WebSearchShortcutButton({
       ref: attach,
       style: { display: "inline-flex", flex: "none", alignItems: "center" },
     },
-    // The host tooltip — same component, same side and delay as the shipped
-    // utilities in this row, so the bubble is the themed one with no shortcut
-    // badge rather than the browser's `title` box. `portal` keeps it out of the
-    // title row's containment, matching how the neighbours render.
-    React.createElement(
-      Tooltip,
-      {
-        label: t("shortcut.open"),
-        side: "bottom",
-        delayMs: 500,
-        portal: true,
-      },
-      React.createElement(
-        "button",
-        {
-          type: "button",
-          "aria-label": t("shortcut.open"),
-          "aria-haspopup": "dialog",
-          "aria-expanded": open,
-          onClick: () => shortcutOpen.setOpen(!open),
-          style: {
-            appearance: "none",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 24,
-            height: 24,
-            padding: 0,
-            border: "1px solid transparent",
-            borderRadius: 8,
-            cursor: "pointer",
-            background: open
-              ? "var(--dsw-alias-interactive-bg-hover)"
-              : "none",
-            color: open
-              ? "var(--dsw-alias-label-primary)"
-              : "var(--dsw-alias-label-secondary)",
+    Tooltip
+      ? React.createElement(
+          Tooltip,
+          {
+            label: t("shortcut.open"),
+            side: "bottom",
+            delayMs: 500,
+            // Older Tooltip implementations ignore this optional prop.
+            portal: true,
+            children: button,
           },
-        },
-        searchIcon(),
-      ),
-    ),
+        )
+      : button,
   );
 }
 
@@ -3059,10 +3043,11 @@ function WebSearchShortcutPanel({
   scope: any;
   locale?: any;
 }) {
-  const open = React.useSyncExternalStore(
+  const anchor = React.useSyncExternalStore(
     shortcutOpen.subscribe,
-    shortcutOpen.isOpen,
+    shortcutOpen.getAnchor,
   );
+  const open = anchor !== null;
   const snapshot: Snapshot = React.useSyncExternalStore(
     React.useCallback(
       (listener: () => void) => scope.subscribe(listener),
@@ -3085,11 +3070,12 @@ function WebSearchShortcutPanel({
 
   // Track the button's box while open. The header does not scroll, but the
   // conversation behind it can, and a resize moves the utilities cluster.
-  React.useEffect(() => {
-    if (!open) return;
+  React.useLayoutEffect(() => {
+    if (!anchor) {
+      setAnchorRect(null);
+      return;
+    }
     const measure = () => {
-      const anchor = shortcutOpen.getAnchor();
-      if (!anchor) return;
       const box = anchor.getBoundingClientRect();
       setAnchorRect({
         top: box.bottom + 6,
@@ -3103,7 +3089,7 @@ function WebSearchShortcutPanel({
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [open]);
+  }, [anchor]);
 
   // Dismiss on outside press and on Escape, while open only.
   React.useEffect(() => {
@@ -3112,10 +3098,10 @@ function WebSearchShortcutPanel({
       const target = event.target as Node;
       if (panelRef.current?.contains(target)) return;
       if (shortcutOpen.getAnchor()?.contains(target)) return;
-      shortcutOpen.setOpen(false);
+      shortcutOpen.close();
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") shortcutOpen.setOpen(false);
+      if (event.key === "Escape") shortcutOpen.close();
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -3159,7 +3145,7 @@ function WebSearchShortcutPanel({
     if (stillDirty) setFailed(t("error.save"));
     else {
       setDrafts({});
-      shortcutOpen.setOpen(false);
+      shortcutOpen.close();
     }
   };
 
@@ -3370,7 +3356,7 @@ function WebSearchShortcutPanel({
         {
           type: "button",
           "aria-label": t("shortcut.close"),
-          onClick: () => shortcutOpen.setOpen(false),
+          onClick: () => shortcutOpen.close(),
           style: {
             appearance: "none",
             border: 0,
@@ -3428,12 +3414,9 @@ function WebSearchShortcutPanel({
           ),
         ),
       ),
-      ...SHORTCUT_FIELDS.map((name) => specOf(name))
-        .filter((spec): spec is AdvancedField => spec !== undefined)
-        .filter(
-          (spec) => spec.field !== "parallelEngines" || strategy !== "fallback",
-        )
-        .map(field),
+      ...SHORTCUT_FIELDS.filter(
+        (spec) => spec.field !== "parallelEngines" || strategy !== "fallback",
+      ).map(field),
       // Domain filters: two tall textareas collapse into one summary line.
       React.createElement(
         "div",

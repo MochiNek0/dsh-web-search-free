@@ -63,6 +63,7 @@
   "type": "module",
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && tsc -p tsconfig.client.json && node wrap-client.cjs",
+    "test": "node --test test/*.test.cjs",
     "check": "node scripts/check-package.cjs",
     "prepublishOnly": "pnpm run build && pnpm run check"
   },

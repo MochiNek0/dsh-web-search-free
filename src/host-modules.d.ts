@@ -7,9 +7,8 @@
  * host's and the harness breaks. Declaring them here is what lets `tsc` check
  * the call sites without a `node_modules` entry to resolve.
  *
- * Keep this minimal on purpose: only the members this bundle actually calls, so
- * a host change that removes one shows up as a compile error instead of an
- * undefined at runtime.
+ * These are local declarations, not a check of the running host's exports.
+ * Declare only the props used here and guard optional exports at runtime.
  */
 declare module "@deepseek-ai/dsh-client-ui-primitives" {
   import type * as React from "react";
@@ -20,16 +19,14 @@ declare module "@deepseek-ai/dsh-client-ui-primitives" {
    * utility uses, so a plugin entry sits visually level with them.
    */
   export const Tooltip: React.ComponentType<{
-    /** Bubble text. Required by the host component; typed optional here so a missing one is a visible empty bubble, not a crash. */
-    label?: React.ReactNode;
+    /** Bubble text, required by both older and newer host implementations. */
+    label: string | (() => string);
     /** Which side of the child the bubble opens on. */
-    side?: "top" | "bottom" | "left" | "right";
+    side?: "top" | "bottom" | "right";
     /** Hover dwell before showing, in ms. */
     delayMs?: number;
-    /** Render into the frame's overlay so a containing block cannot clip it. */
+    /** Newer hosts support portals; older hosts ignore this prop. */
     portal?: boolean;
-    /** Keys rendered as a badge at the bubble's trailing edge. */
-    shortcutKeys?: readonly string[];
-    children?: React.ReactNode;
+    children: React.ReactElement;
   }>;
 }
