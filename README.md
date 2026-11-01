@@ -73,6 +73,8 @@ dsh plugin --profile web add dsh-web-search-free
 
 安装后 dsh 自动对账 `dsh.profile.bundles`，插件即接管 web 搜索与抓取。
 
+> **例外**：如果 profile 的 `cordis.patch.yml` 里已经有一条 `- id: web`（打开过 dsh「插件 → 网页搜索 → 启用新版 Web 搜索 API」开关就会写入），它会覆盖插件的设置，插件装上了也不会被调用。插件会在日志和卡片顶部提示这种情况，处理方法见[插件没有接管搜索](#插件没有接管搜索)。
+
 <details>
 <summary>从本地源码安装</summary>
 
@@ -152,6 +154,20 @@ dsh plugin --profile web add .
 dsh 0.1.7 把配置从 `~/.dsh/settings.yaml` 迁移到 profile 的 `cordis.patch.yml`，迁移只跑一次。如果当时插件没能启动（1.5.x 在 0.1.7 上会卡在 "Failed to load plugins"），Key 会留在 `~/.dsh/settings.yaml.imported` 里。插件检测到这种情况时，会在日志和卡片上提示。可以在卡片里重新填 Key，或者把下面这段交给 dsh：
 
 > 把 dsh 主目录（默认 ~/.dsh）下 settings.yaml.imported 里 web-search-free 段的所有字段，原样写进当前 profile 的 cordis.patch.yml，作为 id 为 web-search-free 的 entry 的 config；该 entry 不存在就新增。保留原文件的注释和格式，改动前先备份。
+
+### 插件没有接管搜索
+
+dsh 的配置分层叠加：各 bundle 的 patch → profile 的 `cordis.patch.yml` → `--patch`，同一 id 的 `config` 整段替换，后面的层胜出。本插件的 bundle patch 把 `web` 指向 `web-search-free`，但如果 profile 的 `cordis.patch.yml` 里已经有：
+
+```yaml
+- id: web
+  name: "@deepseek-ai/dsh-web"
+  config:
+    searchProvider: deepseek-search-api
+    fetchProvider: deepseek-fetch-api
+```
+
+插件这一层就被盖掉了。把两个值改成 `web-search-free`，或者整条删掉，保存后立即生效。
 
 ## 更新与卸载
 

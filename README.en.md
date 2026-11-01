@@ -73,6 +73,8 @@ dsh plugin --profile web add dsh-web-search-free
 
 dsh then reconciles `dsh.profile.bundles` and the plugin takes over web search and fetch.
 
+> **Exception**: if the profile's `cordis.patch.yml` already has a `- id: web` entry (dsh's "Plugins → Web Search → new Web Search API" switch writes one), it overrides the plugin and the plugin is never called. The plugin flags this in the log and at the top of its card; see [Plugin not handling search](#plugin-not-handling-search).
+
 <details>
 <summary>Installing from local source</summary>
 
@@ -152,6 +154,20 @@ Field names follow `Config` in `src/index.ts`: `<engine>ApiKey` (multi-line stri
 dsh 0.1.7 migrates settings from `~/.dsh/settings.yaml` into the profile's `cordis.patch.yml`, once. If the plugin could not start at that moment (1.5.x stops the Web UI at "Failed to load plugins" on 0.1.7), the keys stay in `~/.dsh/settings.yaml.imported`. When the plugin detects this, it says so in the log and on the card. Re-enter the keys in the card, or hand this to dsh:
 
 > Move every field of the web-search-free section in settings.yaml.imported (under the dsh home, ~/.dsh by default) into the current profile's cordis.patch.yml, as the config of the entry with id web-search-free; add that entry if it is missing. Preserve the file's existing comments and formatting, and back it up first.
+
+### Plugin not handling search
+
+dsh layers its configuration: each bundle's patch → the profile's `cordis.patch.yml` → `--patch`; entries with the same id replace `config` wholesale and later layers win. This plugin's bundle patch points `web` at `web-search-free`, but if the profile's `cordis.patch.yml` already contains:
+
+```yaml
+- id: web
+  name: "@deepseek-ai/dsh-web"
+  config:
+    searchProvider: deepseek-search-api
+    fetchProvider: deepseek-fetch-api
+```
+
+the plugin's layer is overridden. Change both values to `web-search-free`, or delete the entry; it applies on save.
 
 ## Updating and uninstalling
 

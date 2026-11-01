@@ -276,6 +276,65 @@ function hintLegacySettings(settings: any, logger: any): void {
   }
 }
 
+/** The id this plugin registers its search and fetch providers under. */
+const PROVIDER_ID = 'web-search-free'
+
+/** A web capability the seam routes somewhere other than this plugin. */
+type RouteOverride = { capability: 'search' | 'fetch'; provider: string }
+
+/**
+ * Which capabilities the web seam currently routes AWAY from this plugin.
+ *
+ * The bundle patch points the `web` row at `web-search-free`, but it is only
+ * one layer: the profile's own `cordis.patch.yml` is applied after every
+ * bundle, and an entry with the same id replaces `config` wholesale. dsh's
+ * "启用新版 Web 搜索 API" switch writes exactly such a `- id: web` entry, so
+ * once it has been saved this plugin installs fine and is silently never
+ * called (issue #9). This reads the value the seam actually resolves with —
+ * its config field, else the `$DSH_WEB_*_PROVIDER` env it falls back to — the
+ * same order `WebRuntime.search` / `.fetch` use.
+ *
+ * Reads the runtime's `config` field, which is not public API: anything
+ * unexpected yields `[]` (no warning) rather than a false alarm. An unset id
+ * also yields nothing — the seam then picks the single usable provider, and
+ * whether that is us depends on what else is registered, not on a pin.
+ *
+ * @param web - the `web` service (`WebRuntime`), possibly absent.
+ * @returns the overridden capabilities, empty when all route here or unknown.
+ */
+function routeOverrides(web: any): RouteOverride[] {
+  const config = web?.config
+  if (config === null || typeof config !== 'object') return []
+  const out: RouteOverride[] = []
+  const pins = [
+    ['search', config.searchProvider, process.env.DSH_WEB_SEARCH_PROVIDER],
+    ['fetch', config.fetchProvider, process.env.DSH_WEB_FETCH_PROVIDER],
+  ] as const
+  for (const [capability, field, env] of pins) {
+    let provider: unknown
+    try {
+      provider = readLive<unknown>(field) ?? env
+    } catch {
+      continue
+    }
+    if (typeof provider === 'string' && provider !== '' && provider !== PROVIDER_ID) {
+      out.push({ capability, provider })
+    }
+  }
+  return out
+}
+
+/** The log line for {@link routeOverrides}; one message covers both capabilities. */
+function routeOverrideWarning(overrides: RouteOverride[]): string {
+  const list = overrides.map((o) => `web_${o.capability} → ${o.provider}`).join('、')
+  return (
+    `本插件没有接管网页搜索：dsh 的 web 路由当前是 ${list}，不是 ${PROVIDER_ID}。\n` +
+    `通常是 profile 的 cordis.patch.yml 里已有一条 \`- id: web\`（打开过 dsh「启用新版 Web 搜索 API」开关就会写入），` +
+    `它排在插件的 bundle patch 之后、整段覆盖了插件的设置。\n` +
+    `修复：把那条 web 条目的 searchProvider / fetchProvider 改成 ${PROVIDER_ID}，或整条删掉，保存后立即生效。`
+  )
+}
+
 /** Short, non-leaking token for log lines so a failing key is identifiable without printing it. */
 function maskKey(key: string): string {
   if (!key) return '***'
@@ -698,6 +757,14 @@ export function apply(ctx: Context, config: RawConfig) {
   // providers instead of tripping WEB_DUPLICATE_PROVIDER on the next apply.
   // The seam reads `available()` at execution time, so every setting below is
   // honored live — no watch/re-sync wiring is needed.
+  // Say so once at startup when the seam routes elsewhere — otherwise the
+  // only symptom is that searches quietly hit some other backend (issue #9).
+  // The card repeats this live, via the stats route.
+  {
+    const overrides = routeOverrides(ctx.web)
+    if (overrides.length > 0) logger.warn(routeOverrideWarning(overrides))
+  }
+
   ctx.effect(() => ctx.web?.registerSearchProvider({
     id: 'web-search-free',
     available: () => getActiveProviders('search').length > 0,
@@ -859,7 +926,14 @@ export function apply(ctx: Context, config: RawConfig) {
     }
     for (const { provider, keys } of getActiveProviders('search')) for (const key of keys) row(provider, key)
     if (usage.has('jina', '')) row(availableProviders.jina, '')
-    return { since: usage.since, cacheHits: usage.cacheHits, rows, version: PLUGIN_VERSION }
+    return {
+      since: usage.since,
+      cacheHits: usage.cacheHits,
+      rows,
+      version: PLUGIN_VERSION,
+      // Read live: the profile patch is volatile, so a fix shows on the next refresh.
+      routeOverrides: routeOverrides(ctx.web),
+    }
   }
 
   /**
