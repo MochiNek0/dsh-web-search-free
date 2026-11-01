@@ -196,6 +196,12 @@ type Stats = {
   rows: StatsRow[];
   /** The Host half's package version; absent before 1.8.0. */
   version?: string;
+  /**
+   * Web capabilities dsh routes to a provider other than this plugin, read live
+   * by the Host half; absent before 1.9.1. Non-empty means the plugin is
+   * installed but not in use (issue #9).
+   */
+  routeOverrides?: { capability: "search" | "fetch"; provider: string }[];
 };
 type UpdateCheck = { current: string; latest: string; updateAvailable: boolean };
 
@@ -350,6 +356,9 @@ const zh = {
     "把 dsh 主目录（默认 ~/.dsh）下 settings.yaml.imported 里 web-search-free 段的所有字段，原样写进当前 profile 的 cordis.patch.yml，作为 id 为 web-search-free 的 entry 的 config；该 entry 不存在就新增。保留原文件的注释和格式，改动前先备份。",
   "legacy.copy": "复制指令",
   "legacy.copied": "已复制",
+  "route.title": "本插件当前没有接管网页搜索",
+  "route.body":
+    "dsh 的 web 路由现在指向 {list}，所以搜索不会经过这里配置的引擎。通常是 profile 的 cordis.patch.yml 里已有一条 `- id: web`（打开过 dsh「启用新版 Web 搜索 API」开关就会写入），它排在插件之后、整段覆盖了插件的设置。把那条 web 条目的 searchProvider / fetchProvider 改成 web-search-free（或整条删掉），保存后点「刷新」确认。",
   intro:
     "填了 Key 的引擎进入「调用顺序」：排在前面的优先调用，失败则 fallback 到下一个，拖 ⋮⋮ 可改顺序。每个引擎可填多个 Key（每行一个），同一引擎内也按顺序轮换。",
   "fetch.label": "启用 web_fetch（URL 抓取）",
@@ -516,6 +525,9 @@ const en: Record<keyof typeof zh, string> = {
     "Move every field of the web-search-free section in settings.yaml.imported (under the dsh home, ~/.dsh by default) into the current profile's cordis.patch.yml, as the config of the entry with id web-search-free; add that entry if it is missing. Preserve the file's existing comments and formatting, and back it up first.",
   "legacy.copy": "Copy instruction",
   "legacy.copied": "Copied",
+  "route.title": "This plugin is not handling web search right now",
+  "route.body":
+    "dsh routes web traffic to {list}, so searches never reach the engines configured here. Usually the profile's cordis.patch.yml already has a `- id: web` entry (dsh's \"new Web Search API\" switch writes one); it is applied after this plugin and replaces its settings wholesale. Point that entry's searchProvider / fetchProvider at web-search-free (or delete it), then press Refresh to confirm.",
   intro:
     "Engines with a key join the call order: the first one is tried first, and a failure falls back to the next. Drag ⋮⋮ to reorder. Each engine takes several keys (one per line), rotated in order too.",
   "fetch.label": "Enable web_fetch (URL fetching)",
@@ -1273,6 +1285,64 @@ function WebSearchFreeCard({
         t("intro"),
       ),
     );
+    // The seam routes elsewhere: every setting below is moot until that is
+    // fixed, so this goes first. Fed by the stats probe on mount (issue #9).
+    const overrides = stats?.routeOverrides ?? [];
+    if (overrides.length > 0) {
+      children.push(
+        React.createElement(
+          "div",
+          {
+            key: "route",
+            style: {
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+              padding: "12px 14px",
+              borderRadius: 10,
+              fontSize: 12,
+              lineHeight: 1.6,
+              background: "var(--dsw-alias-fill-tertiary)",
+              color: "var(--dsw-alias-label-secondary)",
+              border: "1px solid var(--dsw-alias-label-error)",
+            },
+          },
+          React.createElement(
+            "div",
+            { style: { fontWeight: 600, color: "var(--dsw-alias-label-error)" } },
+            t("route.title"),
+          ),
+          React.createElement(
+            "div",
+            null,
+            t("route.body", {
+              list: overrides
+                .map((o) => `web_${o.capability} → ${o.provider}`)
+                .join(", "),
+            }),
+          ),
+          React.createElement(
+            "button",
+            {
+              type: "button",
+              disabled: statsLoading,
+              style: {
+                alignSelf: "flex-start",
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: "1px solid var(--dsw-alias-border-secondary)",
+                background: "transparent",
+                color: "inherit",
+                fontSize: 12,
+                cursor: "pointer",
+              },
+              onClick: () => void loadStats(),
+            },
+            t(statsLoading ? "stats.loading" : "stats.refresh"),
+          ),
+        ),
+      );
+    }
     // Nothing saved here yet. That is either a fresh install or an upgrade
     // whose section dsh's one-shot import left behind, and the card cannot tell
     // which (reading the harness home is the Host half's business, and it logs
