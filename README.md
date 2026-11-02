@@ -39,6 +39,7 @@
 | SerpApi              |  ✓   |  ✗   |    弱    | 250 次/月                                  | <https://serpapi.com/users/sign_up>                      |
 | Jina AI              |  ✓   |  ✓   |   部分   | 新 Key 送 10M tokens（一次性）             | <https://jina.ai/api-key>                                |
 | Serping API          |  ✓   |  ✗   |   部分   | 每账号 1,000 次（一次性，无需绑卡）        | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| You.com              |  ✓   |  ✗   |   部分   | 100 次/天（免 Key，无需注册）              | <https://you.com/platform?utm_source=mochinek0-dsh-web-search-free&utm_medium=oss_integration&utm_campaign=2026-10-oss-integrations&utm_content=readme> |
 
 表格顺序即默认调用顺序：按可持续免费次数从多到少（不限量 > 每日重置 > 每月重置 > 一次性），相当时注册/绑卡门槛低的优先。
 
@@ -54,6 +55,7 @@
 - **SearXNG**：「Key」框填实例地址（如 `https://searx.example.com`），每行一个。实例需在 `settings.yml` 的 `search.formats` 里加上 `json`，否则返回 403。
 - **百度千帆**：Key 在百度智能云 API Key（V2）页面创建，旧版 AK/SK 不可用。只搜中文网页。
 - **火山引擎**：Key 来自联网搜索控制台的「API Key 管理」，火山方舟（Ark）的 Key 不可用。每月 1 日重置，只搜中文网页。
+- **You.com**：默认免 Key——免费层 100 次/天（按 IP 限速，无需注册）。在「高级设置」开启「无 Key 搜索兜底」后，没配任何搜索 Key、或带 Key 的引擎都失败时用它兜底；填 You.com Key（或设 `YDC_API_KEY` 环境变量）时按普通引擎顺序调用，限额更高，该开关随之失效。
 
 </details>
 

@@ -39,6 +39,7 @@ Every search on the official `deepseek-official` channel is a **full model call*
 | SerpApi             |   ✓    |   ✗   |    weak     | 250 calls/month                               | <https://serpapi.com/users/sign_up>                      |
 | Jina AI             |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time)            | <https://jina.ai/api-key>                                |
 | Serping API         |   ✓    |   ✗   |   partial   | 1,000 per account (one-time, no card)         | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| You.com             |   ✓    |   ✗   |   partial   | 100/day (keyless, no signup)                   | <https://you.com/platform?utm_source=mochinek0-dsh-web-search-free&utm_medium=oss_integration&utm_campaign=2026-10-oss-integrations&utm_content=readme> |
 
 The table order is the default call order: most sustainable free calls first (unlimited > daily reset > monthly reset > one-time), with lower signup friction breaking ties.
 
@@ -54,6 +55,7 @@ The table order is the default call order: most sustainable free calls first (un
 - **SearXNG**: put instance URLs in the "key" box (e.g. `https://searx.example.com`), one per line. The instance must list `json` in `search.formats` in its `settings.yml`, or it answers 403.
 - **Baidu Qianfan**: create the key on Baidu AI Cloud's API Key (V2) page; legacy AK/SK pairs do not work. Chinese web only.
 - **Volcengine**: the key comes from "API Key management" in the web-search console; Ark keys do not work. Resets on the 1st; Chinese web only.
+- **You.com**: keyless by default — the free tier is 100 searches/day per IP (no signup). Turn on "Keyless search fallback" under Advanced to use it when no search key is configured or every keyed engine failed; set a You.com key (or `YDC_API_KEY`) to ride the normal call order with higher limits, which makes the toggle inert.
 
 </details>
 
