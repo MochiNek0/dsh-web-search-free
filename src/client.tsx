@@ -512,6 +512,12 @@ const zh = {
   "adv.keylessJinaFetch": "无 Key 抓取兜底",
   "adv.keylessJinaFetch.hint":
     "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）。没配任何抓取引擎时，它就是唯一的抓取通道。",
+  "entry.title": "免费网页搜索 · 快速配置",
+  "entry.tooltip": "免费网页搜索：{summary}",
+  "entry.close": "关闭",
+  "entry.pref": "在会话顶栏显示快捷入口",
+  "entry.pref.hint":
+    "关闭后仍可在「设置」和「插件」页里配置。即时生效，只保存在当前浏览器。",
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -679,6 +685,12 @@ const en: Record<keyof typeof zh, string> = {
   "adv.keylessJinaFetch": "Keyless fetch fallback",
   "adv.keylessJinaFetch.hint":
     "When every keyed fetch fails, fall back to Jina Reader without a key (rate-limited; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch.",
+  "entry.title": "Web Search Free · Quick setup",
+  "entry.tooltip": "Web Search Free: {summary}",
+  "entry.close": "Close",
+  "entry.pref": "Show the shortcut in the session header",
+  "entry.pref.hint":
+    "When off, the same settings stay reachable from Settings and the Plugins page. Applies immediately; stored in this browser only.",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { zh, en };
@@ -815,7 +827,9 @@ export function apply(ctx: any) {
     ctx.inject(provider.services, (sctx: any) => {
       if (claimed) return;
       claimed = true;
-      mountCard(sctx, provider.bind(sctx));
+      const scope = provider.bind(sctx);
+      mountCard(sctx, scope);
+      mountEntries(sctx, scope);
     });
   }
 
@@ -892,6 +906,373 @@ function mountCard(ctx: any, scope: any) {
   ctx.effect(() => () => clearTimeout(timer));
 }
 
+/**
+ * `react-dom`, for the quick panel's portal. Asked for at run time and allowed
+ * to be missing: a top-level `import` compiles to an unguarded `require`, and
+ * the module loader THROWS on a specifier outside its table — on a host that
+ * does not seed `react-dom` that would take the whole client half down with
+ * it. Without a portal the panel renders in place, still `position: fixed`.
+ */
+let ReactDOM: any = null;
+try {
+  ReactDOM = require("react-dom");
+} catch {
+  ReactDOM = null;
+}
+
+/**
+ * Whether the header shortcut is shown. A per-browser view preference, not
+ * plugin configuration: it lives in localStorage so toggling it needs no Save,
+ * no Host schema field, and cannot fail on a read-only settings connection.
+ * `available` says a shortcut seat exists on this dsh at all — the toggle is
+ * hidden where there is nothing for it to hide.
+ */
+const ENTRY_PREF_KEY = "web-search-free:quick-entry";
+const entryPref = (() => {
+  const listeners = new Set<() => void>();
+  let visible = true;
+  try {
+    visible = window.localStorage.getItem(ENTRY_PREF_KEY) !== "0";
+  } catch {
+    // Storage withheld (private mode, embedded webview): keep the default.
+  }
+  let snapshot = { visible, available: false };
+  const update = (patch: Partial<typeof snapshot>) => {
+    snapshot = { ...snapshot, ...patch };
+    listeners.forEach((listener) => listener());
+  };
+  return {
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getSnapshot: () => snapshot,
+    setVisible: (next: boolean) => {
+      try {
+        window.localStorage.setItem(ENTRY_PREF_KEY, next ? "1" : "0");
+      } catch {
+        // Not persisted; the choice still holds until the page reloads.
+      }
+      update({ visible: next });
+    },
+    setAvailable: (next: boolean) => {
+      if (snapshot.available !== next) update({ available: next });
+    },
+  };
+})();
+
+/**
+ * Seats for the quick-entry shortcut, most preferred first; the same
+ * wait-for-declaration arbitration as {@link SLOT_CANDIDATES}, so a dsh that
+ * has none of them simply shows no shortcut. All are LIST slots: the plugin
+ * adds one small icon next to the host's own controls and replaces nothing.
+ */
+const ENTRY_SLOTS: { name: string; options: Record<string, unknown> }[] = [
+  // dsh >= 0.2: the action group at the right of every session header.
+  {
+    name: "conversation.session.header.actions",
+    options: { id: NAMESPACE, order: 30 },
+  },
+];
+
+/**
+ * Add the two discoverable ways in, next to the Plugins-page card: a globe
+ * shortcut in the session header that opens the whole form in a dialog, and a
+ * section of its own in the Settings dialog.
+ * @param ctx - the settings-service fiber the registrations belong to.
+ * @param scope - the bound settings face, whichever generation supplied it.
+ */
+function mountEntries(ctx: any, scope: any) {
+  const inject = () => ({ scope, locale: ctx.reflect.get("locale") });
+  // Resolved on every read, so the label follows a language switch.
+  const label = () => {
+    const active = ctx.reflect.get("locale")?.getSnapshot?.().active;
+    return translate(
+      active === "en" || active === "zh" ? active : browserLang(),
+    )("header.title");
+  };
+
+  const declared = new Set<string>();
+  let mounted: { name: string; dispose: () => void } | null = null;
+  const reconcile = () => {
+    const best = ENTRY_SLOTS.find((slot) => declared.has(slot.name));
+    if (mounted?.name === best?.name) return;
+    mounted?.dispose();
+    mounted = null;
+    if (best)
+      mounted = {
+        name: best.name,
+        dispose: ctx.slots.register(
+          { ...best.options, name: best.name, label, inject },
+          QuickEntryButton,
+        ),
+      };
+    entryPref.setAvailable(mounted !== null);
+  };
+  for (const slot of ENTRY_SLOTS) {
+    ctx.slots.inject(slot.name, () => {
+      declared.add(slot.name);
+      reconcile();
+      return () => {
+        declared.delete(slot.name);
+        reconcile();
+      };
+    });
+  }
+
+  // Settings → its own section. The shell draws the navigation row from
+  // `label`; the page is the same form the Plugins page shows.
+  ctx.slots.inject("settings.section", () =>
+    ctx.slots.register(
+      { name: "settings.section", id: NAMESPACE, order: 40, label, inject },
+      SettingsSection,
+    ),
+  );
+}
+
+function SettingsSection({ scope, locale }: { scope: any; locale?: any }) {
+  return React.createElement(WebSearchFreeCard, {
+    scope,
+    locale,
+    view: "page",
+  });
+}
+
+/**
+ * The header shortcut: a globe that opens the full form in a dialog. A dot
+ * marks "installed but no engine configured", the one state worth nagging
+ * about. The dialog stays mounted once opened, so closing it (Esc, backdrop,
+ * ×) hides the form without throwing away keys typed but not yet saved.
+ */
+function QuickEntryButton({ scope, locale }: { scope: any; locale?: any }) {
+  const pref = React.useSyncExternalStore(
+    entryPref.subscribe,
+    entryPref.getSnapshot,
+  );
+  const snapshot: Snapshot = React.useSyncExternalStore(
+    React.useCallback(
+      (listener: () => void) => scope.subscribe(listener),
+      [scope],
+    ),
+    () => scope.getSnapshot(),
+  );
+  const lang = useLang(locale);
+  const t = React.useMemo(() => translate(lang), [lang]);
+  const [open, setOpen] = React.useState(false);
+  const [everOpened, setEverOpened] = React.useState(false);
+  const [hover, setHover] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const count = PROVIDERS.filter((p) =>
+    isConfigured(p.field, snapshot, {}),
+  ).length;
+  const summary =
+    count > 0 ? t("summary.configured", { count }) : t("summary.none");
+  const needsSetup = snapshot.status === "ready" && count === 0;
+
+  const button = pref.visible
+    ? React.createElement(
+        "button",
+        {
+          type: "button",
+          title: t("entry.tooltip", { summary }),
+          "aria-label": t("entry.tooltip", { summary }),
+          "aria-haspopup": "dialog",
+          "aria-expanded": open,
+          onClick: () => {
+            setEverOpened(true);
+            setOpen(!open);
+          },
+          onMouseEnter: () => setHover(true),
+          onMouseLeave: () => setHover(false),
+          style: {
+            appearance: "none",
+            position: "relative",
+            flex: "none",
+            width: 28,
+            height: 28,
+            padding: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "none",
+            borderRadius: 8,
+            cursor: "pointer",
+            color: "var(--dsw-alias-label-secondary)",
+            background:
+              hover || open
+                ? "var(--dsw-alias-interactive-bg-hover, var(--dsw-alias-fill-tertiary))"
+                : "transparent",
+            transition: "background .16s",
+          },
+        },
+        globe(16),
+        needsSetup
+          ? React.createElement("span", {
+              "aria-hidden": true,
+              style: {
+                position: "absolute",
+                top: 4,
+                right: 4,
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                ...roundCorners,
+                background: "var(--dsw-alias-brand-primary)",
+              },
+            })
+          : null,
+      )
+    : null;
+
+  const panel = everOpened
+    ? React.createElement(
+        "div",
+        {
+          // Closing on mousedown-on-backdrop only: a text selection dragged
+          // out of a key box and released over the backdrop must not close.
+          onMouseDown: (e: any) => {
+            if (e.target === e.currentTarget) setOpen(false);
+          },
+          style: {
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: open ? "flex" : "none",
+            alignItems: "flex-start",
+            justifyContent: "center",
+            boxSizing: "border-box",
+            padding: "max(24px, var(--dsh-frame-overlay-top, 24px)) 16px 24px",
+            background: "rgba(0, 0, 0, .45)",
+            // The backdrop covers the desktop title bar's drag region.
+            WebkitAppRegion: "no-drag",
+          } as React.CSSProperties,
+        },
+        React.createElement(
+          "div",
+          {
+            role: "dialog",
+            "aria-modal": true,
+            "aria-label": t("entry.title"),
+            style: {
+              width: "min(720px, 100%)",
+              maxHeight: "100%",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              borderRadius: 16,
+              border: "1px solid var(--dsw-alias-border-l2)",
+              background: "var(--dsw-alias-bg-base)",
+              color: "var(--dsw-alias-label-primary)",
+              boxShadow: "0 16px 48px rgba(0, 0, 0, .28)",
+              textAlign: "left",
+            },
+          },
+          React.createElement(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flex: "none",
+                padding: "14px 16px 14px 20px",
+                borderBottom: "1px solid var(--dsw-alias-border-l2)",
+              },
+            },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  flex: 1,
+                  minWidth: 0,
+                },
+              },
+              React.createElement(
+                "span",
+                { style: { fontSize: 15, fontWeight: 600 } },
+                t("entry.title"),
+              ),
+              React.createElement(
+                "span",
+                {
+                  style: {
+                    fontSize: 12,
+                    color: "var(--dsw-alias-label-tertiary)",
+                  },
+                },
+                summary,
+              ),
+            ),
+            React.createElement(
+              "button",
+              {
+                type: "button",
+                title: t("entry.close"),
+                "aria-label": t("entry.close"),
+                onClick: () => setOpen(false),
+                style: {
+                  appearance: "none",
+                  flex: "none",
+                  width: 28,
+                  height: 28,
+                  padding: 0,
+                  border: "none",
+                  borderRadius: 8,
+                  background: "transparent",
+                  color: "var(--dsw-alias-label-secondary)",
+                  fontSize: 18,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                },
+              },
+              "×",
+            ),
+          ),
+          React.createElement(
+            "div",
+            {
+              style: {
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "20px 20px 0",
+              },
+            },
+            React.createElement(WebSearchFreeCard, {
+              scope,
+              locale,
+              view: "page",
+              quick: true,
+            }),
+          ),
+        ),
+      )
+    : null;
+
+  return React.createElement(
+    React.Fragment,
+    null,
+    button,
+    panel && ReactDOM?.createPortal
+      ? ReactDOM.createPortal(panel, document.body)
+      : panel,
+  );
+}
+
 type Snapshot = {
   status: "loading" | "ready" | "unavailable";
   value?: {
@@ -948,11 +1329,18 @@ function WebSearchFreeCard({
   scope,
   locale,
   view,
+  quick,
 }: {
   scope: any;
   locale?: any;
   view?: "summary" | "page";
+  /** Inside the quick panel: no migration banner, Save pinned to the bottom. */
+  quick?: boolean;
 }) {
+  const shortcut = React.useSyncExternalStore(
+    entryPref.subscribe,
+    entryPref.getSnapshot,
+  );
   const snapshot: Snapshot = React.useSyncExternalStore(
     React.useCallback(
       (listener: () => void) => scope.subscribe(listener),
@@ -1349,7 +1737,7 @@ function WebSearchFreeCard({
     // the accurate version of this on startup). So the copy is written to be
     // true either way: it asks rather than asserts, and costs a first-time user
     // one line they can ignore.
-    if (!configured) {
+    if (!configured && !quick) {
       children.push(
         React.createElement(
           "div",
@@ -2176,6 +2564,58 @@ function WebSearchFreeCard({
                 ),
               ),
               ...advancedRows.map(advancedRow),
+              // Not a stored setting and not part of Save: a view preference
+              // of this browser, applied the moment it is flipped.
+              shortcut.available
+                ? React.createElement(
+                    "div",
+                    {
+                      key: "shortcut",
+                      style: {
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      },
+                    },
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 16,
+                          fontSize: 13,
+                        },
+                      },
+                      React.createElement(
+                        "span",
+                        {
+                          style: {
+                            flex: 1,
+                            minWidth: 0,
+                            color: "var(--dsw-alias-label-primary)",
+                            fontWeight: 500,
+                          },
+                        },
+                        t("entry.pref"),
+                      ),
+                      toggleSwitch(shortcut.visible, false, () =>
+                        entryPref.setVisible(!shortcut.visible),
+                      ),
+                    ),
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 11,
+                          lineHeight: 1.6,
+                          color: "var(--dsw-alias-label-tertiary)",
+                        },
+                      },
+                      t("entry.pref.hint"),
+                    ),
+                  )
+                : null,
             )
           : null,
       ),
@@ -2443,6 +2883,17 @@ function WebSearchFreeCard({
             justifyContent: "flex-end",
             borderTop: "1px solid var(--dsw-alias-border-l2)",
             paddingTop: 16,
+            // In the quick panel the form scrolls inside the dialog, so the
+            // commit row stays in reach instead of sitting below the fold.
+            ...(quick
+              ? {
+                  position: "sticky",
+                  bottom: 0,
+                  zIndex: 1,
+                  paddingBottom: 16,
+                  background: "var(--dsw-alias-bg-base)",
+                }
+              : {}),
           },
         },
         // Left-aligned and outlined, away from 保存: this one is for uninstalling
@@ -2814,6 +3265,29 @@ function caret(size: number) {
       strokeWidth: 1.5,
       strokeLinecap: "round",
       strokeLinejoin: "round",
+    }),
+  );
+}
+
+/** The shortcut's icon: a plain globe, drawn in the current text color. */
+function globe(size: number) {
+  return React.createElement(
+    "svg",
+    {
+      width: size,
+      height: size,
+      viewBox: "0 0 16 16",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.3,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+    },
+    React.createElement("circle", { cx: 8, cy: 8, r: 6.25 }),
+    React.createElement("path", { d: "M1.75 8h12.5" }),
+    React.createElement("path", {
+      d: "M8 1.75c1.7 1.7 2.6 3.9 2.6 6.25S9.7 12.55 8 14.25C6.3 12.55 5.4 10.35 5.4 8S6.3 3.45 8 1.75z",
     }),
   );
 }

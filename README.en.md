@@ -99,6 +99,11 @@ Run `dsh web` and find the card:
 | ≥ 0.1.6     | Sidebar **Plugins** → "Installed" → **web-search-free**        |
 | ≤ 0.1.5     | **Settings → Plugins → Web Search Free**                       |
 
+On dsh ≥ 0.2 there are two closer ways in, both opening the same form:
+
+- **The globe icon in the session header**: opens a "Quick setup" dialog; a dot marks it while no engine is configured. To hide it, turn off "Show the shortcut in the session header" at the bottom of Advanced (this browser only).
+- **Settings → Web Search Free**: a section of its own in the Settings dialog.
+
 1. **Click an engine row** and paste keys (one per line); "Get an API key ↗" links to the signup page.
 2. **Drag the `⋮⋮` handle** to set the call order: higher rows go first, failing through in order.
 3. The **"Enable web_fetch"** switch at the top: when off, `web_fetch` calls return a clear error.

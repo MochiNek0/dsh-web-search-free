@@ -34,7 +34,7 @@ const problems = []
 const DEPENDABLE_SCOPED = new Set(['@deepseek-ai/schemastery'])
 
 /** Specifiers the browser module loader answers from its own seed table, never npm. */
-const CLIENT_SEED = new Set(['react'])
+const CLIENT_SEED = new Set(['react', 'react-dom'])
 
 // 1. No host package may enter `dependencies`.
 for (const name of Object.keys(pkg.dependencies ?? {})) {
