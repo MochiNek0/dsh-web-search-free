@@ -32,6 +32,7 @@ export interface Config {
   tinyfishApiKey?: string
   serpapiApiKey?: string
   serpingapiApiKey?: string
+  serpbaseApiKey?: string
   /** SearXNG instance base URLs, one per line — the "key" of a keyless engine. */
   searxngApiKey?: string
   baiduApiKey?: string
@@ -130,14 +131,15 @@ const configFields = () => ({
   tinyfishApiKey: Schema.string().description('API key(s) for TinyFish. One key per line for multi-key rotation.'),
   serpapiApiKey: Schema.string().description('API key(s) for SerpApi. One key per line for multi-key rotation.'),
   serpingapiApiKey: Schema.string().description('API key(s) for Serping API. One key per line for multi-key rotation.'),
+  serpbaseApiKey: Schema.string().description('API key(s) for SerpBase. One key per line for multi-key rotation.'),
   searxngApiKey: Schema.string().description('SearXNG instance URL(s), e.g. https://searx.example.com. One per line, tried in order. The instance must enable the JSON format.'),
   baiduApiKey: Schema.string().description('API key(s) for Baidu Qianfan AI Search (Qianfan V2 console). One key per line for multi-key rotation.'),
   volcengineApiKey: Schema.string().description('API key(s) for Volcengine web search (from the web-search console; Ark keys do not work). One key per line for multi-key rotation.'),
   enableFetch: Schema.boolean().default(true).description('是否允许模型调用 web_fetch（URL 内容抓取）。web_fetch 工具由 dsh 统一挂载，关闭后调用会返回明确的错误提示，而不是从工具表移除；切换即时生效，无需重启。'),
   fetchSource: Schema.union([...FETCH_SOURCES]).default('providers')
     .description('web_fetch 由谁抓取：providers 用填了 Key 的引擎（都没有或都失败时退回 dsh 自带的本地抓取）；dsh 直接用 dsh 自带的本地抓取（免费，不经第三方，但不渲染 JS）。'),
-  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi', 'searxng', 'baidu', 'volcengine']))
-    .default(['tinyfish', 'searxng', 'anysearch', 'baidu', 'tavily', 'brave', 'exa', 'firecrawl', 'volcengine', 'serpapi', 'jina', 'serpingapi'])
+  providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi', 'serpbase', 'searxng', 'baidu', 'volcengine']))
+    .default(['tinyfish', 'searxng', 'anysearch', 'baidu', 'tavily', 'brave', 'exa', 'firecrawl', 'volcengine', 'serpapi', 'jina', 'serpingapi', 'serpbase'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。'),
   searchStrategy: Schema.union([...SEARCH_STRATEGIES]).default('fallback')
     .description('搜索策略：fallback 逐个尝试（最省额度）；race 同时调用前 N 个引擎、取最快的；merge 同时调用前 N 个引擎并合并去重（召回最好，消耗 N 倍额度）。'),

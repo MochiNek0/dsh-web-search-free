@@ -39,6 +39,7 @@
 | SerpApi              |  ✓   |  ✗   |    弱    | 250 次/月                                  | <https://serpapi.com/users/sign_up>                      |
 | Jina AI              |  ✓   |  ✓   |   部分   | 新 Key 送 10M tokens（一次性）             | <https://jina.ai/api-key>                                |
 | Serping API          |  ✓   |  ✗   |   部分   | 每账号 1,000 次（一次性，无需绑卡）        | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| SerpBase             |  ✓   |  ✗   |   部分   | 500 credits（一次性，无需绑卡）            | <https://serpbase.dev/?utm_campaign=ops-b402f02dccae&utm_medium=outreach&utm_source=opsbot>  |
 
 表格顺序即默认调用顺序：按可持续免费次数从多到少（不限量 > 每日重置 > 每月重置 > 一次性），相当时注册/绑卡门槛低的优先。
 
@@ -54,6 +55,7 @@
 - **SearXNG**：「Key」框填实例地址（如 `https://searx.example.com`），每行一个。实例需在 `settings.yml` 的 `search.formats` 里加上 `json`，否则返回 403。
 - **百度千帆**：Key 在百度智能云 API Key（V2）页面创建，旧版 AK/SK 不可用。只搜中文网页。
 - **火山引擎**：Key 来自联网搜索控制台的「API Key 管理」，火山方舟（Ark）的 Key 不可用。每月 1 日重置，只搜中文网页。
+- **SerpBase**：`POST /google/search`，`X-API-Key` 头，1 credit/次；新账号送 500 credits，不用绑卡。它不支持 `tbs` 时间过滤（多传参数会被直接拒绝），所以「时间范围」对它不生效。Google 有时把结果 URL 包成 `google.com/goto?…`（实测这类链接 302 跳到真实页面）：Google 对这些链接限速，SerpBase 来不及还原时就把包装链接原样返回，仍可抓取；需要真实地址可以用免费的 `/google/resolve`（0 credits，每次最多 50 条）批量换。
 
 </details>
 

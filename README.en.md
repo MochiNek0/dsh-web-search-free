@@ -39,6 +39,7 @@ Every search on the official `deepseek-official` channel is a **full model call*
 | SerpApi             |   ✓    |   ✗   |    weak     | 250 calls/month                               | <https://serpapi.com/users/sign_up>                      |
 | Jina AI             |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time)            | <https://jina.ai/api-key>                                |
 | Serping API         |   ✓    |   ✗   |   partial   | 1,000 per account (one-time, no card)         | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| SerpBase            |   ✓    |   ✗   |   partial   | 500 credits (one-time, no card)               | <https://serpbase.dev/?utm_campaign=ops-b402f02dccae&utm_medium=outreach&utm_source=opsbot>  |
 
 The table order is the default call order: most sustainable free calls first (unlimited > daily reset > monthly reset > one-time), with lower signup friction breaking ties.
 
@@ -54,6 +55,7 @@ The table order is the default call order: most sustainable free calls first (un
 - **SearXNG**: put instance URLs in the "key" box (e.g. `https://searx.example.com`), one per line. The instance must list `json` in `search.formats` in its `settings.yml`, or it answers 403.
 - **Baidu Qianfan**: create the key on Baidu AI Cloud's API Key (V2) page; legacy AK/SK pairs do not work. Chinese web only.
 - **Volcengine**: the key comes from "API Key management" in the web-search console; Ark keys do not work. Resets on the 1st; Chinese web only.
+- **SerpBase**: `POST /google/search` with an `X-API-Key` header, 1 credit per search; a new account gets 500 credits with no card. There is no `tbs` recency filter (unknown parameters are refused outright), so the "Freshness" setting does not apply. Google sometimes wraps a result URL as `google.com/goto?…` (measured: those 302 to the real page) because it rate-limits that unwrapping — SerpBase then returns the wrapper as-is, which still fetches fine; the free `/google/resolve` endpoint (0 credits, up to 50 links per call) turns a batch of them into real URLs.
 
 </details>
 
