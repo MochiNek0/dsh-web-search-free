@@ -1,5 +1,5 @@
 import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
-import { ProviderError, googleCountry, googleLanguage, toPublishedAt } from './fields.js';
+import { ProviderError, googleCountry, googleLanguage, googleTbs, toPublishedAt } from './fields.js';
 
 /**
  * SerpBase answers with a business `status` code inside the HTTP response and
@@ -64,13 +64,18 @@ export const serpbaseProvider: WebSearchProvider = {
    * `published_at` is a display date ("Apr 14, 2025"), not ISO-8601; like
    * SerpApi's `date` it is passed through verbatim rather than parsed.
    *
-   * Two documented limits shape the request:
-   * - `num` / `limit` are not parameters of this product (measured: sending
-   *   `num: 5` still returned 9 organic results), so the seam's cap is applied
-   *   after the fact instead of at the source.
-   * - `tbs` is not supported either — any parameter the product does not know
-   *   is refused with status 1000 — so `freshness` cannot be passed on. The
-   *   plugin's own `finalizeSources` still applies what the Host half can.
+   * Two measured limits shape the request:
+   * - `num` / `limit` are not parameters of this product (measured: `num: 5`
+   *   still returned 8 organic results, `num: 20` returned 5), so the seam's
+   *   cap is applied after the fact instead of at the source.
+   * - `tbs` is accepted as a plain string (`qdr:d` / `qdr:w` / `qdr:m` /
+   *   `qdr:y`): HTTP 200, `status: 0`, still one credit, no rejection — so
+   *   `freshness` is forwarded as `tbs`. Whether the product then applies the
+   *   window is *unverified*: a measured `qdr:h` search for a topic that only
+   *   has old pages still came back with 1995 pages, and the `search_url` the
+   *   response echoes contains no `tbs`. Sending it costs nothing and starts
+   *   working the day the upstream honours it; the READMEs call it unverified
+   *   rather than unsupported.
    */
   async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
     const res = await fetch('https://api.serpbase.dev/google/search', {
@@ -83,6 +88,9 @@ export const serpbaseProvider: WebSearchProvider = {
         q: query,
         ...optional('gl', googleCountry(options?.region)),
         ...optional('hl', googleLanguage(options?.language)),
+        // Accepted as a plain `qdr:*` string; whether the upstream honours it
+        // is unverified (see the doc comment above), but it is harmless to send.
+        ...optional('tbs', googleTbs(options?.freshness)),
         // The product's own budget: with it, SerpBase returns `status: 1504`
         // (not charged) instead of letting our abort cut the request off, so a
         // slow query still hands the turn to the next engine with a clean,
