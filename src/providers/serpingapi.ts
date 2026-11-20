@@ -1,8 +1,5 @@
 import { WebSearchProvider, SearchResult, FetchResult, SearchOptions } from '../types.js';
-import { ProviderError, clampCount, googleCountry, googleLanguage, googleTbs, toPublishedAt } from './fields.js';
-
-/** `{ [name]: value }` when the value is set, `{}` otherwise — for spreading into a request body. */
-const optional = (name: string, value: unknown) => (value === undefined ? {} : { [name]: value });
+import { ProviderError, clampCount, googleCountry, googleLanguage, googleTbs, optional, toPublishedAt } from './fields.js';
 
 export const serpingapiProvider: WebSearchProvider = {
   name: 'serpingapi',

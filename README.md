@@ -39,7 +39,7 @@
 | SerpApi              |  ✓   |  ✗   |    弱    | 250 次/月                                  | <https://serpapi.com/users/sign_up>                      |
 | Jina AI              |  ✓   |  ✓   |   部分   | 新 Key 送 10M tokens（一次性）             | <https://jina.ai/api-key>                                |
 | Serping API          |  ✓   |  ✗   |   部分   | 每账号 1,000 次（一次性，无需绑卡）        | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
-| SerpBase             |  ✓   |  ✗   |   部分   | 500 credits（一次性，无需绑卡）            | <https://serpbase.dev/?utm_campaign=ops-b402f02dccae&utm_medium=outreach&utm_source=opsbot>  |
+| SerpBase             |  ✓   |  ✗   |   部分   | 500 credits（一次性，无需绑卡）            | <https://serpbase.dev/?ref=dsh-web-search-free>  |
 
 表格顺序即默认调用顺序：按可持续免费次数从多到少（不限量 > 每日重置 > 每月重置 > 一次性），相当时注册/绑卡门槛低的优先。
 
@@ -55,7 +55,7 @@
 - **SearXNG**：「Key」框填实例地址（如 `https://searx.example.com`），每行一个。实例需在 `settings.yml` 的 `search.formats` 里加上 `json`，否则返回 403。
 - **百度千帆**：Key 在百度智能云 API Key（V2）页面创建，旧版 AK/SK 不可用。只搜中文网页。
 - **火山引擎**：Key 来自联网搜索控制台的「API Key 管理」，火山方舟（Ark）的 Key 不可用。每月 1 日重置，只搜中文网页。
-- **SerpBase**：`POST /google/search`，`X-API-Key` 头，1 credit/次；新账号送 500 credits，不用绑卡。`tbs` 用字符串形式（如 `qdr:w`）传会被接受：实测 HTTP 200、`status: 0`、照常扣 1 credit，不会被拒绝，所以「时间范围」会作为 `tbs` 转发过去；但它是否真的生效**未验证**——实测 `qdr:h` 查一个只有旧内容的话题，仍返回 1995 年的页面，且返回的 `search_url` 里也没有 `tbs`。Google 有时把结果 URL 包成 `google.com/goto?…`（实测这类链接 302 跳到真实页面）：Google 对这些链接限速，SerpBase 来不及还原时就把包装链接原样返回，仍可抓取；需要真实地址可以用免费的 `/google/resolve`（0 credits，每次最多 50 条）批量换。
+- **SerpBase**：`POST /google/search`，`X-API-Key` 头，1 credit/次；新账号送 500 credits，不用绑卡。这个接口没有条数参数（实测传 `num` 不生效），插件按 `maxResults` 在本地截断。`tbs` 用字符串形式（如 `qdr:w`）传会被接受：实测 HTTP 200、`status: 0`、照常扣 1 credit，不会被拒绝，所以「时间范围」会作为 `tbs` 转发过去；但它是否真的生效**未验证**——实测 `qdr:h` 查一个只有旧内容的话题，仍返回 1995 年的页面，且返回的 `search_url` 里也没有 `tbs`，此时「时间范围」对这个引擎的结果没有影响。Google 有时把结果 URL 包成 `google.com/goto?url=…` 或 `/url?q=…`（实测这类链接 302 跳到真实页面）：SerpBase 来不及还原时就把包装链接原样返回，插件在本地从查询参数里取出真实地址（不发额外请求），这样域名过滤、优先域名和跨引擎去重才认得出目标页面；解不出来时保留包装链接，仍可抓取。`gl` / `hl` 取值不被接受时（`status: 1000`）会自动去掉这两项重试一次，不会让该用户的搜索一直失败。
 
 </details>
 

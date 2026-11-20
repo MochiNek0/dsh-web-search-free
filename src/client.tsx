@@ -133,7 +133,7 @@ const PROVIDERS: ProviderMeta[] = [
     key: "serpbase",
     field: "serpbaseApiKey",
     label: "SerpBase",
-    signup: "https://serpbase.dev/?utm_campaign=ops-b402f02dccae&utm_medium=outreach&utm_source=opsbot",
+    signup: "https://serpbase.dev/?ref=dsh-web-search-free",
     caps: { search: true },
   },
 ];
