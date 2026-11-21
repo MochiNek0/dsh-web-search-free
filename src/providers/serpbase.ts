@@ -123,17 +123,15 @@ export const serpbaseProvider: WebSearchProvider = {
    * - `num` / `limit` are not parameters of this product (measured: `num: 5`
    *   still returned 8 organic results, `num: 20` returned 5), so the seam's
    *   `maxResults` is applied to the parsed list instead of at the source.
-   * - `tbs` is accepted as a plain string (`qdr:d` / `qdr:w` / `qdr:m` /
-   *   `qdr:y`): HTTP 200, `status: 0`, still one credit, no rejection — so
-   *   `freshness` is forwarded as `tbs`. Whether the product then applies the
-   *   window is *unverified*: a measured `qdr:h` search for a topic that only
-   *   has old pages still came back with 1995 pages, and the `search_url` the
-   *   response echoes contains no `tbs`. Nothing downstream re-filters either
-   *   (`finalizeSources` only trims snippets and applies `preferredDomains`),
-   *   so when the upstream ignores the window, `freshness` has no effect on
-   *   this engine's results at all. Sending it costs nothing and starts
-   *   working the day the upstream honours it; the READMEs call it unverified
-   *   rather than unsupported.
+   * - `tbs` is a documented parameter of this product: `qdr:h` / `qdr:d` /
+   *   `qdr:w` / `qdr:m` / `qdr:y` (optionally with a count, e.g. `qdr:m6`),
+   *   `cdr:1,cd_min:1/1/2026,cd_max:3/31/2026` for a date range, `sbd:1` for
+   *   date sort, `li:1` for verbatim. It is sent to Google unchanged and
+   *   billed as the same credit, so `freshness` is forwarded as `tbs`
+   *   (<https://serpbase.dev/docs/google_web_search>). A value that is not
+   *   `name:value` pairs is refused with `status: 1000`. Nothing downstream
+   *   re-filters (`finalizeSources` only trims snippets and applies
+   *   `preferredDomains`), so the window is Google's to apply.
    * - `gl` / `hl` are checked against a closed list upstream: an unknown value
    *   (`hl: zh-cn`, `gl: uk`) is answered with `status: 1000`, not with
    *   results. Since the mapping here comes from the user's locale settings,
@@ -154,8 +152,8 @@ export const serpbaseProvider: WebSearchProvider = {
           q: query,
           ...(withLocale ? optional('gl', country) : {}),
           ...(withLocale ? optional('hl', language) : {}),
-          // Accepted as a plain `qdr:*` string; whether the upstream honours it
-          // is unverified (see the doc comment above), but it is harmless to send.
+          // Carries the freshness window (`qdr:h` / `qdr:d` / `qdr:w` / …), a
+          // documented parameter sent to Google unchanged, same credits.
           ...optional('tbs', googleTbs(options?.freshness)),
           // The product's own budget: with it, SerpBase returns `status: 1504`
           // (not charged) instead of letting our abort cut the request off, so a
