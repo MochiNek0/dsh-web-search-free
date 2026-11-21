@@ -39,6 +39,7 @@
 | SerpApi              |  ✓   |  ✗   |    弱    | 250 次/月                                  | <https://serpapi.com/users/sign_up>                      |
 | Jina AI              |  ✓   |  ✓   |   部分   | 新 Key 送 10M tokens（一次性）             | <https://jina.ai/api-key>                                |
 | Serping API          |  ✓   |  ✗   |   部分   | 每账号 1,000 次（一次性，无需绑卡）        | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| SerpBase             |  ✓   |  ✗   |   部分   | 500 credits（一次性，无需绑卡）            | <https://serpbase.dev/?ref=dsh-web-search-free>  |
 
 表格顺序即默认调用顺序：按可持续免费次数从多到少（不限量 > 每日重置 > 每月重置 > 一次性），相当时注册/绑卡门槛低的优先。
 
@@ -54,6 +55,7 @@
 - **SearXNG**：「Key」框填实例地址（如 `https://searx.example.com`），每行一个。实例需在 `settings.yml` 的 `search.formats` 里加上 `json`，否则返回 403。
 - **百度千帆**：Key 在百度智能云 API Key（V2）页面创建，旧版 AK/SK 不可用。只搜中文网页。
 - **火山引擎**：Key 来自联网搜索控制台的「API Key 管理」，火山方舟（Ark）的 Key 不可用。每月 1 日重置，只搜中文网页。
+- **SerpBase**：`POST /google/search`，`X-API-Key` 头，1 credit/次；新账号送 500 credits，不用绑卡。这个接口没有条数参数（实测传 `num` 不生效），插件按 `maxResults` 在本地截断。`tbs` 是这个接口的正式参数（`qdr:h` / `qdr:d` / `qdr:w` / `qdr:m` / `qdr:y`，可带数字如 `qdr:m6`；日期段用 `cdr:1,cd_min:1/1/2026,cd_max:3/31/2026`；另有 `sbd:1` 按日期排序、`li:1` 逐字匹配），原样转给 Google、照常扣 1 credit，所以「时间范围」会作为 `tbs` 直接生效（见 <https://serpbase.dev/docs/google_web_search>）；取值不是 `name:value` 形式时会被 `status: 1000` 拒绝。Google 有时把结果 URL 包成 `google.com/goto?url=…` 或 `/url?q=…`（实测这类链接 302 跳到真实页面）：SerpBase 来不及还原时就把包装链接原样返回，插件在本地从查询参数里取出真实地址（不发额外请求），这样域名过滤、优先域名和跨引擎去重才认得出目标页面；解不出来时保留包装链接，仍可抓取。`gl` / `hl` 取值不被接受时（`status: 1000`）会自动去掉这两项重试一次，不会让该用户的搜索一直失败。
 
 </details>
 
@@ -125,8 +127,8 @@ dsh ≥ 0.2 上还有两个更近的入口，打开的是同一张表单：
 | --------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | 搜索策略        | `searchStrategy`      | `fallback`（默认）逐个尝试，最省额度；`race` 同时调前 N 个、取最快；`merge` 同时调前 N 个并合并去重，结果最全但消耗 N 倍额度           |
 | 并发引擎数      | `parallelEngines`     | 2–4，默认 2，仅 `race` / `merge` 使用                                                                                                  |
-| 结果地区 / 语言 | `region` / `language` | 默认 `auto`。Brave、SerpApi、Serping API、TinyFish、AnySearch 两项都支持；Tavily、Exa 仅地区；SearXNG 仅语言；其余不支持            |
-| 时间范围        | `freshness`           | `any`（默认）/ `day` / `week` / `month` / `year`。AnySearch、Jina 不支持；百度千帆的 `day` 按一周查                                    |
+| 结果地区 / 语言 | `region` / `language` | 默认 `auto`。Brave、SerpApi、Serping API、TinyFish、AnySearch、SerpBase 两项都支持；Tavily、Exa 仅地区；SearXNG 仅语言；其余不支持            |
+| 时间范围        | `freshness`           | `any`（默认）/ `day` / `week` / `month` / `year`。AnySearch、Jina 不支持；SerpBase 按 `tbs` 转发（`day`→`qdr:d`、`week`→`qdr:w`、`month`→`qdr:m`、`year`→`qdr:y`）；百度千帆的 `day` 按一周查 |
 | 屏蔽域名        | `blockedDomains`      | 每行一个，含子域名                                                                                                                     |
 | 优先域名        | `preferredDomains`    | 每行一个，这些域名的结果排到最前                                                                                                       |
 | 摘要长度        | `snippetLength`       | 100–1000，默认 300                                                                                                                     |

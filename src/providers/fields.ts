@@ -10,7 +10,17 @@ export class ProviderError extends Error {
   }
 }
 
-/** Throw a {@link ProviderError} for a non-2xx response, labelled with the operation. */
+/**
+ * `{ [name]: value }` when the value is set, `{}` otherwise — for spreading an
+ * optional parameter into a request body without a `undefined` key.
+ */
+export function optional(name: string, value: unknown): Record<string, unknown> {
+  return value === undefined ? {} : { [name]: value };
+}
+
+/**
+ * Throw a {@link ProviderError} for a non-2xx response, labelled with the operation.
+ */
 export function assertOk(res: Response, label: string): void {
   if (!res.ok) throw new ProviderError(`${label} failed: ${res.status} ${res.statusText}`, res.status);
 }
