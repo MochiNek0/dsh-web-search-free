@@ -192,6 +192,17 @@ dsh plugin --profile web remove dsh-web-search-free
 
 开发提示：`@deepseek-ai/*` 不能进 `dependencies` 或非 optional 的 `peerDependencies`，否则会在用户 profile 里装出一份私有副本、遮蔽宿主实例。改动 `package.json` 后请运行 `pnpm run check`（发布前也会自动检查）。
 
+## 推荐：dsh desktop
+
+同一作者的 [dsh desktop](https://github.com/MochiNek0/dsh-desktop) 是 dsh web 的轻量桌面客户端，和本插件一起用很方便：
+
+- **安装包只有几 MB**（Windows 2.5 MB、macOS 6.3 MB、Debian 4.1 MB），打开就在原生窗口里运行 dsh，不用开终端、不用管端口；会话和配置跟命令行里的 dsh 是同一份。
+- **手机也能用**：扫码配对后，手机浏览器里就是电脑上的那个 dsh，支持局域网、Tailscale 和 Cloudflare 三种连接方式。
+- **托盘与通知**：任务跑完或等你确认时弹系统通知；托盘列出正在运行的会话；快捷键唤出快速提问框。
+- **插件面板**：可视化管理 dsh 插件。本插件就在面板的推荐列表里，点一下就能装。
+
+下载：[官网](https://dsh-desktop.cc.cd/) · [GitHub Releases](https://github.com/MochiNek0/dsh-desktop/releases/latest)
+
 ## 反馈
 
 dsh 仍在快速迭代，插件可能有跟不上的时候。遇到问题请提 [issue](https://github.com/MochiNek0/dsh-web-search-free/issues)，附上 dsh 版本和报错信息。

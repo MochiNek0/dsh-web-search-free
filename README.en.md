@@ -192,6 +192,17 @@ The plugin is a dsh bundle layer: `cordis.patch.yml` inserts a `web-search-free`
 
 Development note: no `@deepseek-ai/*` package may go into `dependencies` or a non-optional `peerDependencies`, or a private copy lands in the user's profile and shadows the host's instance. Run `pnpm run check` after touching `package.json` (it also runs before publishing).
 
+## Also by the author: dsh desktop
+
+[dsh desktop](https://github.com/MochiNek0/dsh-desktop) is a lightweight desktop client for dsh web, and pairs well with this plugin:
+
+- **A few-MB installer** (Windows 2.5 MB, macOS 6.3 MB, Debian 4.1 MB) that runs dsh in a native window, with no terminal and no ports to manage. Sessions and config are shared with the dsh CLI.
+- **Use it from your phone**: scan a QR code and your phone's browser shows the dsh on your computer, over LAN, Tailscale or Cloudflare.
+- **Tray and notifications**: a system notification when a turn finishes or needs your approval, running sessions in the tray, and a hotkey for quick questions.
+- **Plugin panel**: manage dsh plugins visually. This plugin is in the panel's preset list and installs in one click.
+
+Download: [website](https://dsh-desktop.cc.cd/en/) · [GitHub Releases](https://github.com/MochiNek0/dsh-desktop/releases/latest)
+
 ## Feedback
 
 dsh is still moving fast and this plugin may lag behind at times. Please [open an issue](https://github.com/MochiNek0/dsh-web-search-free/issues) with your dsh version and the error.
