@@ -39,6 +39,7 @@ Every search on the official `deepseek-official` channel is a **full model call*
 | SerpApi             |   ✓    |   ✗   |    weak     | 250 calls/month                               | <https://serpapi.com/users/sign_up>                      |
 | Jina AI             |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time)            | <https://jina.ai/api-key>                                |
 | Serping API         |   ✓    |   ✗   |   partial   | 1,000 per account (one-time, no card)         | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| SerpBase            |   ✓    |   ✗   |   partial   | 500 credits (one-time, no card)               | <https://serpbase.dev/?ref=dsh-web-search-free>  |
 
 The table order is the default call order: most sustainable free calls first (unlimited > daily reset > monthly reset > one-time), with lower signup friction breaking ties.
 
@@ -54,6 +55,7 @@ The table order is the default call order: most sustainable free calls first (un
 - **SearXNG**: put instance URLs in the "key" box (e.g. `https://searx.example.com`), one per line. The instance must list `json` in `search.formats` in its `settings.yml`, or it answers 403.
 - **Baidu Qianfan**: create the key on Baidu AI Cloud's API Key (V2) page; legacy AK/SK pairs do not work. Chinese web only.
 - **Volcengine**: the key comes from "API Key management" in the web-search console; Ark keys do not work. Resets on the 1st; Chinese web only.
+- **SerpBase**: `POST /google/search` with an `X-API-Key` header, 1 credit per search; a new account gets 500 credits with no card. The product has no result-count parameter (measured: `num` is ignored), so the plugin applies `maxResults` to the parsed list itself. `tbs` is a documented parameter of the product (`qdr:h` / `qdr:d` / `qdr:w` / `qdr:m` / `qdr:y`, optionally with a count such as `qdr:m6`; `cdr:1,cd_min:1/1/2026,cd_max:3/31/2026` for a date range; `sbd:1` to sort by date, `li:1` for verbatim), sent to Google unchanged and billed as the same credit, so the "Freshness" setting takes effect as `tbs` (see <https://serpbase.dev/docs/google_web_search>). A value that is not `name:value` pairs is refused with `status: 1000`. Google sometimes wraps a result URL as `google.com/goto?url=…` or `/url?q=…` (measured: those 302 to the real page) because it rate-limits that unwrapping; SerpBase then returns the wrapper as-is, and the plugin unwraps it locally from the query string (no extra request) so domain blocking, preferred domains and cross-engine de-duplication see the real page. If the wrapper holds no usable target it is kept, and still fetches. A `gl` / `hl` value the product rejects (`status: 1000`) is retried once without either, instead of failing every search for that user.
 
 </details>
 
@@ -125,8 +127,8 @@ The "Advanced" section at the bottom is collapsed by default and works untouched
 | --------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | Search strategy       | `searchStrategy`      | `fallback` (default) one at a time, least quota; `race` queries the first N at once and takes the fastest; `merge` queries the first N and fuses results — best coverage, N× quota |
 | Engines at once       | `parallelEngines`     | 2–4, default 2; `race` / `merge` only                                                                                                         |
-| Region / language     | `region` / `language` | Default `auto`. Brave, SerpApi, Serping API, TinyFish and AnySearch take both; Tavily and Exa region only; SearXNG language only; the rest neither |
-| Time range            | `freshness`           | `any` (default) / `day` / `week` / `month` / `year`. Not supported by AnySearch or Jina; Baidu Qianfan treats `day` as a week                  |
+| Region / language     | `region` / `language` | Default `auto`. Brave, SerpApi, Serping API, TinyFish, AnySearch and SerpBase take both; Tavily and Exa region only; SearXNG language only; the rest neither |
+| Time range            | `freshness`           | `any` (default) / `day` / `week` / `month` / `year`. Not supported by AnySearch or Jina; SerpBase forwards it as `tbs` (`day`→`qdr:d`, `week`→`qdr:w`, `month`→`qdr:m`, `year`→`qdr:y`); Baidu Qianfan treats `day` as a week |
 | Blocked domains       | `blockedDomains`      | One per line, subdomains included                                                                                                             |
 | Preferred domains     | `preferredDomains`    | One per line; results from them move to the top                                                                                               |
 | Snippet length        | `snippetLength`       | 100–1000, default 300                                                                                                                         |

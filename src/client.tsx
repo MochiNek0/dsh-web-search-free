@@ -129,6 +129,13 @@ const PROVIDERS: ProviderMeta[] = [
     signup: "https://serpingapi.com/signup?ref=dsh-web-search-free",
     caps: { search: true },
   },
+  {
+    key: "serpbase",
+    field: "serpbaseApiKey",
+    label: "SerpBase",
+    signup: "https://serpbase.dev/?ref=dsh-web-search-free",
+    caps: { search: true },
+  },
 ];
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key);
 const byKey = (key: string) => PROVIDERS.find((p) => p.key === key)!;
@@ -411,6 +418,7 @@ const zh = {
   "free.tavily": "1000 credits/月",
   "free.firecrawl": "1000 credits/月（约 500 次）",
   "free.serpingapi": "1000 次（一次性，无需绑卡）",
+  "free.serpbase": "500 credits（一次性，无需绑卡）",
   "free.brave": "$5 额度/月（约 1000 次，需绑卡）",
   "free.serpapi": "250 次/月",
   "free.jina": "10M tokens（一次性）",
@@ -582,6 +590,7 @@ const en: Record<keyof typeof zh, string> = {
   "free.tavily": "1000 credits/month",
   "free.firecrawl": "1000 credits/month (≈500 calls)",
   "free.serpingapi": "1000 calls (one-time, no card)",
+  "free.serpbase": "500 credits (one-time, no card)",
   "free.brave": "$5 credit/month (≈1000 calls, card required)",
   "free.serpapi": "250 calls/month",
   "free.jina": "10M tokens (one-time)",
@@ -1285,6 +1294,7 @@ type Snapshot = {
     tinyfishApiKey?: string;
     serpapiApiKey?: string;
     serpingapiApiKey?: string;
+    serpbaseApiKey?: string;
     searxngApiKey?: string;
     baiduApiKey?: string;
     volcengineApiKey?: string;

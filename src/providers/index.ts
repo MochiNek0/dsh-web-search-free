@@ -8,6 +8,7 @@ import { anysearchProvider } from './anysearch.js';
 import { tinyfishProvider } from './tinyfish.js';
 import { serpapiProvider } from './serpapi.js';
 import { serpingapiProvider } from './serpingapi.js';
+import { serpbaseProvider } from './serpbase.js';
 import { searxngProvider } from './searxng.js';
 import { baiduProvider } from './baidu.js';
 import { volcengineProvider } from './volcengine.js';
@@ -26,4 +27,5 @@ export const availableProviders: Record<string, WebSearchProvider> = {
   serpapi: serpapiProvider,
   jina: jinaProvider,
   serpingapi: serpingapiProvider,
+  serpbase: serpbaseProvider,
 };
