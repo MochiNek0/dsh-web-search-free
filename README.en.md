@@ -94,15 +94,18 @@ Local directories are linked, so a later `pnpm build` applies right away; after 
 
 Run `dsh web` and find the card:
 
-| dsh version | Where the card is                                              |
-| ----------- | -------------------------------------------------------------- |
-| ≥ 0.1.6     | Sidebar **Plugins** → "Installed" → **web-search-free**        |
-| ≤ 0.1.5     | **Settings → Plugins → Web Search Free**                       |
+| dsh version    | Where the card is                                                              |
+| -------------- | ------------------------------------------------------------------------------ |
+| ≥ 0.2.1-rc.3   | Sidebar **Web Search Free** row (pin or unpin it from the **More** menu)       |
+| ≥ 0.1.6        | Sidebar **Plugins** → "Installed" → **web-search-free**                        |
+| ≤ 0.1.5        | **Settings → Plugins → Web Search Free**                                       |
+
+Since 0.2.1-rc.3 the sidebar's **More** menu can pin and unpin every panel, so the plugin gets a row of its own there instead of a place in the Settings dialog.
 
 On dsh ≥ 0.2 there are two closer ways in, both opening the same form:
 
+- **The "Web Search Free" icon in the sidebar** (≥ 0.2.1-rc.3): the whole form as a page. Hover the row and press the pin to unpin it, or unpin it from the **More** menu; pin it again there whenever you want it back.
 - **The globe icon in the session header**: opens a "Quick setup" dialog; a dot marks it while no engine is configured. To hide it, turn off "Show the shortcut in the session header" at the bottom of Advanced (this browser only).
-- **Settings → Web Search Free**: a section of its own in the Settings dialog.
 
 1. **Click an engine row** and paste keys (one per line); "Get an API key ↗" links to the signup page.
 2. **Drag the `⋮⋮` handle** to set the call order: higher rows go first, failing through in order.

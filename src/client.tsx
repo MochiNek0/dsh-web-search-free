@@ -15,6 +15,14 @@ const NAMESPACE = "web-search-free";
 const PACKAGE_NAME = "dsh-web-search-free";
 
 /**
+ * Id of the sidebar panel and of the `main` page it opens. Deliberately the
+ * same string as {@link NAMESPACE}: the two id spaces (settings namespaces,
+ * layout panel keys) never meet, so one name for one feature is easier to
+ * follow than two.
+ */
+const PANEL_ID = "web-search-free";
+
+/**
  * All backends the host half knows about; the order here is the default fallback.
  * Sorted by sustainable free volume (searches per month: unlimited, then daily,
  * then monthly resets, one-time grants last), ties broken by ease of signup —
@@ -517,7 +525,7 @@ const zh = {
   "entry.close": "关闭",
   "entry.pref": "在会话顶栏显示快捷入口",
   "entry.pref.hint":
-    "关闭后仍可在「设置」和「插件」页里配置。即时生效，只保存在当前浏览器。",
+    "关闭后仍可在「插件」页打开同一张表单。即时生效，只保存在当前浏览器。",
 };
 
 const en: Record<keyof typeof zh, string> = {
@@ -690,7 +698,7 @@ const en: Record<keyof typeof zh, string> = {
   "entry.close": "Close",
   "entry.pref": "Show the shortcut in the session header",
   "entry.pref.hint":
-    "When off, the same settings stay reachable from Settings and the Plugins page. Applies immediately; stored in this browser only.",
+    "When off, the same form stays reachable from the Plugins page. Applies immediately; stored in this browser only.",
 };
 
 const DICTS: Record<Lang, Record<string, string>> = { zh, en };
@@ -978,9 +986,10 @@ const ENTRY_SLOTS: { name: string; options: Record<string, unknown> }[] = [
 ];
 
 /**
- * Add the two discoverable ways in, next to the Plugins-page card: a globe
- * shortcut in the session header that opens the whole form in a dialog, and a
- * section of its own in the Settings dialog.
+ * Add the discoverable ways in, next to the Plugins-page card: a globe
+ * shortcut in the session header that opens the whole form in a dialog, plus
+ * — on a dsh whose sidebar has a pinnable panel list — a panel of its own
+ * beside Plugins. Releases without that list keep the Settings section.
  * @param ctx - the settings-service fiber the registrations belong to.
  * @param scope - the bound settings face, whichever generation supplied it.
  */
@@ -994,6 +1003,91 @@ function mountEntries(ctx: any, scope: any) {
     )("header.title");
   };
 
+  mountQuickEntry(ctx, inject, label);
+
+  // dsh 0.2.1-rc.3 gave the sidebar's global panel list a More menu that can
+  // pin and unpin every row, so from there a bundle owns a panel of its own
+  // instead of a Settings tab. The seat needs three declarations: `main` for
+  // the page, `sidebar.panellist` for the row, and `sidebar.panellist.actions`
+  // — the More menu, which is what makes the row pinnable. Anything older
+  // declares the last one nowhere and keeps the Settings section below, which
+  // is then the friendlier way in.
+  const PANEL_SLOTS = ["main", "sidebar.panellist", "sidebar.panellist.actions"];
+  const declared = new Set<string>();
+  let panelDispose: (() => void) | undefined;
+  let sectionDispose: (() => void) | undefined;
+  // The Settings section, for a host without the panel list (or before the pin
+  // arrived in 0.2.1-rc.3). The shell draws its navigation row from `label`.
+  const registerSection = () =>
+    ctx.slots.register(
+      { name: "settings.section", id: NAMESPACE, order: 40, label, inject },
+      SettingsSection,
+    );
+  const sync = () => {
+    // The panel seat wins whenever this dsh declares all of it; the section is
+    // mounted otherwise, and unmounted again the moment the panel appears.
+    if (PANEL_SLOTS.every((slot) => declared.has(slot))) {
+      if (sectionDispose !== undefined) {
+        sectionDispose();
+        sectionDispose = undefined;
+      }
+      if (panelDispose !== undefined) return;
+      const disposers = [
+        ctx.slots.register({ name: "main", key: PANEL_ID, inject }, PanelPage),
+        ctx.slots.register(
+          { name: "sidebar.panellist", id: PANEL_ID, order: 20, label },
+          PanelIcon,
+        ),
+      ];
+      panelDispose = () => {
+        for (const dispose of disposers) dispose();
+      };
+      return;
+    }
+    if (panelDispose !== undefined) {
+      panelDispose();
+      panelDispose = undefined;
+    }
+    if (sectionDispose !== undefined || !declared.has("settings.section")) return;
+    sectionDispose = registerSection();
+  };
+  for (const slot of PANEL_SLOTS) {
+    ctx.slots.inject(slot, () => {
+      declared.add(slot);
+      sync();
+      return () => {
+        declared.delete(slot);
+        sync();
+      };
+    });
+  }
+  // The section's own declaration also owns its registration, so a settings
+  // shell that unmounts and remounts cannot leave a second entry in the cell.
+  ctx.slots.inject("settings.section", () => {
+    declared.add("settings.section");
+    sync();
+    return () => {
+      declared.delete("settings.section");
+      if (sectionDispose !== undefined) {
+        sectionDispose();
+        sectionDispose = undefined;
+      }
+    };
+  });
+}
+
+/**
+ * The session-header globe, in the wait-for-declaration style of the panel
+ * seat: a dsh without the header action group simply shows no shortcut.
+ * @param ctx - the settings-service fiber the registration belongs to.
+ * @param inject - the shared props face for every entry of this plugin.
+ * @param label - localized entry label, resolved on each read.
+ */
+function mountQuickEntry(
+  ctx: any,
+  inject: () => any,
+  label: () => string,
+) {
   const declared = new Set<string>();
   let mounted: { name: string; dispose: () => void } | null = null;
   const reconcile = () => {
@@ -1021,15 +1115,6 @@ function mountEntries(ctx: any, scope: any) {
       };
     });
   }
-
-  // Settings → its own section. The shell draws the navigation row from
-  // `label`; the page is the same form the Plugins page shows.
-  ctx.slots.inject("settings.section", () =>
-    ctx.slots.register(
-      { name: "settings.section", id: NAMESPACE, order: 40, label, inject },
-      SettingsSection,
-    ),
-  );
 }
 
 function SettingsSection({ scope, locale }: { scope: any; locale?: any }) {
@@ -1038,6 +1123,116 @@ function SettingsSection({ scope, locale }: { scope: any; locale?: any }) {
     locale,
     view: "page",
   });
+}
+
+/**
+ * The page the sidebar row opens: the same form in the main column, with the
+ * chrome dsh gives every first-level entry — title row, 960px content column,
+ * and scrolling on the column instead of the window.
+ * @param props - the bound settings face and the locale face.
+ */
+function PanelPage({ scope, locale }: { scope: any; locale?: any }) {
+  const lang = useLang(locale);
+  const t = React.useMemo(() => translate(lang), [lang]);
+  const snapshot: Snapshot = React.useSyncExternalStore(
+    React.useCallback(
+      (listener: () => void) => scope.subscribe(listener),
+      [scope],
+    ),
+    () => scope.getSnapshot(),
+  );
+  const count = PROVIDERS.filter((p) =>
+    isConfigured(p.field, snapshot, {}),
+  ).length;
+  const summary =
+    count > 0 ? t("summary.configured", { count }) : t("summary.none");
+  return React.createElement(
+    "div",
+    {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        width: "100%",
+        height: "100%",
+        minWidth: 0,
+        minHeight: 0,
+        color: "var(--dsw-alias-label-primary)",
+        background: "var(--dsw-alias-bg-base)",
+      } as React.CSSProperties,
+    },
+    React.createElement(
+      "div",
+      {
+        style: {
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          scrollbarGutter: "stable",
+        } as React.CSSProperties,
+      },
+      React.createElement(
+        "div",
+        {
+          style: {
+            maxWidth: 960,
+            margin: "0 auto",
+            padding: "0 clamp(24px, 4vw, 48px) 48px",
+          },
+        },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              // The title row owns dsh's 28px top inset plus the window's
+              // leading clearance, the same pair the Plugins and Tasks pages
+              // pad by; the variable is 0 where there is no title bar.
+              paddingTop: "calc(28px + var(--dsh-frame-top-clearance, 0px))",
+              marginBottom: 24,
+            },
+          },
+          React.createElement(
+            "h1",
+            {
+              style: {
+                margin: 0,
+                fontSize: 20,
+                lineHeight: "28px",
+                fontWeight: 500,
+              },
+            },
+            t("header.title"),
+          ),
+          React.createElement(
+            "div",
+            {
+              style: {
+                fontSize: 13,
+                color: "var(--dsw-alias-label-tertiary)",
+              },
+            },
+            t("header.subtitle", { summary }),
+          ),
+        ),
+        React.createElement(WebSearchFreeCard, {
+          scope,
+          locale,
+          view: "page",
+        }),
+      ),
+    ),
+  );
+}
+
+/**
+ * The sidebar row's glyph — the header shortcut's globe at the size the
+ * sidebar asks for. Decorative: the sidebar owns the row's accessible name.
+ * @param props - the sidebar's icon share.
+ */
+function PanelIcon({ size }: { size?: number }) {
+  return globe(size ?? 16);
 }
 
 /**
