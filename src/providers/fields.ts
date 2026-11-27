@@ -85,9 +85,7 @@ export const SNIPPET_MAX_CHARS = 1000;
  */
 export function toSnippet(content: unknown, max = SNIPPET_MAX_CHARS): string | undefined {
   if (typeof content !== 'string' || content.length === 0) return undefined;
-  // Keep newlines: code blocks, lists and tables lose their meaning when all
-  // whitespace is folded. Only horizontal runs and blank-line noise collapse.
-  const text = content.replace(/[^\S\r\n]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  const text = content.replace(/\s+/g, ' ').trim();
   if (text.length === 0) return undefined;
   return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }

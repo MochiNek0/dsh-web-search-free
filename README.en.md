@@ -128,7 +128,7 @@ The "Advanced" section at the bottom is collapsed by default and works untouched
 | Time range            | `freshness`           | `any` (default) / `day` / `week` / `month` / `year`. AnySearch and Jina lack the filter and are skipped when another engine is available; Baidu treats `day` as a week. The host drops dated results outside the window and keeps undated results |
 | Blocked domains       | `blockedDomains`      | One per line, subdomains included                                                                                                             |
 | Preferred domains     | `preferredDomains`    | One per line; results from them move to the top                                                                                               |
-| Snippet length        | `snippetLength`       | 100–1000, default 300; favors text near query terms and preserves useful line breaks                                                 |
+| Snippet length        | `snippetLength`       | 100–1000, default 300; favors text near query terms                                                                                  |
 | Tavily search depth   | `tavilySearchDepth`   | `basic` (default, 1 credit) / `advanced` (2 credits)                                                                                          |
 | Fetch source          | `fetchSource`         | `providers` (default): keyed engines → keyless Jina when enabled → dsh's local fetcher; `dsh`: local only (free, no third party, no JS rendering) |
 | Keyless fetch fallback | `keylessJinaFetch`   | On by default: when every keyed fetch fails, use Jina Reader without a key (20 req/min; the URL is sent to Jina)                              |
@@ -136,7 +136,7 @@ The "Advanced" section at the bottom is collapsed by default and works untouched
 
 Each (engine, key) attempt has its own time limit (10 s search, 20 s fetch). A key that returns 401/402/403/429 or reports exhausted quota moves to the back of the chain for a while (2 minutes for 429, 30 minutes otherwise). When everything fails, the error lists each attempt's reason with keys masked.
 
-Every strategy shares one final pass: HTTP(S) URL validation, normalized de-duplication, blocked-domain filtering, soft ranking by query-term hits/snippet completeness/domain diversity, and truncation to the requested result count. Preferred domains still come first. The plugin over-fetches candidates so blocking, de-duplication and date filtering do not leave too few sources; this does not raise the final cap returned to the model, but engines that bill per result (e.g. Firecrawl) use somewhat more quota per search. Dates are normalized to ISO-8601, with relative strings such as "5 days ago", "3天前" or "昨天" resolved when the response arrives; Baidu timestamps are read as Beijing time.
+Every strategy shares one final pass: HTTP(S) URL validation, normalized de-duplication, blocked-domain filtering, dropping results outside the time range, and truncation to the requested result count. Results keep the engine's (or the merge's) order, except that preferred domains move to the front. Dates are normalized to ISO-8601, with relative strings such as "5 days ago", "3天前" or "昨天" resolved when the response arrives; Baidu timestamps are read as Beijing time.
 
 ### Quality-first example
 

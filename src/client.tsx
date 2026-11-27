@@ -507,7 +507,7 @@ const zh = {
   "adv.domains.placeholder": "每行一个域名，例如 example.com",
   "adv.snippetLength": "摘要长度",
   "adv.snippetLength.hint":
-    "每条结果给模型看的摘要字符数（100–1000）。宿主优先保留查询词附近的内容和必要换行；越长信息越多，也越费 token。",
+    "每条结果给模型看的摘要字符数（100–1000）。宿主优先保留查询词附近的内容；越长信息越多，也越费 token。",
   "adv.tavilySearchDepth": "Tavily 搜索深度",
   "adv.tavilySearchDepth.hint": "advanced 结果更相关，但每次消耗 2 credits。",
   "opt.tavilySearchDepth.basic": "basic（1 credit）",
@@ -679,7 +679,7 @@ const en: Record<keyof typeof zh, string> = {
   "adv.domains.placeholder": "One domain per line, e.g. example.com",
   "adv.snippetLength": "Snippet length",
   "adv.snippetLength.hint":
-    "Characters of snippet the model sees per result (100–1000). The host favors text near query terms and keeps useful line breaks; longer means more context and more tokens.",
+    "Characters of snippet the model sees per result (100–1000). The host favors text near query terms; longer means more context and more tokens.",
   "adv.tavilySearchDepth": "Tavily search depth",
   "adv.tavilySearchDepth.hint":
     "Advanced returns more relevant results but costs 2 credits per search.",

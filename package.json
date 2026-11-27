@@ -64,6 +64,7 @@
   "scripts": {
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json && tsc -p tsconfig.client.json && node wrap-client.cjs",
     "check": "node scripts/check-package.cjs",
+    "test": "tsc -p tsconfig.json && node --test",
     "prepublishOnly": "pnpm run build && pnpm run check"
   },
   "dependencies": {

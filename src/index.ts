@@ -158,7 +158,7 @@ const configFields = () => ({
   preferredDomains: Schema.string().default('')
     .description('优先的域名，每行一个：结果中来自这些域名的条目排到前面。'),
   snippetLength: Schema.natural().min(100).max(1000).default(300)
-    .description('每条结果的摘要长度（字符）。宿主会优先截取查询词附近的片段，并保留代码/列表所需换行。越长上下文越多，也越费模型 token。'),
+    .description('每条结果的摘要长度（字符）。宿主会优先截取查询词附近的片段。越长上下文越多，也越费模型 token。'),
   tavilySearchDepth: Schema.union(['basic', 'advanced']).default('basic')
     .description('Tavily 搜索深度：advanced 结果更相关，但每次消耗 2 credits。'),
   keylessJinaFetch: Schema.boolean().default(true)
@@ -836,9 +836,6 @@ export function apply(ctx: Context, config: RawConfig) {
       const targetResults = typeof request.maxResults === 'number' && Number.isFinite(request.maxResults)
         ? Math.max(1, Math.floor(request.maxResults))
         : 10
-      // Over-fetch one page so blocking, de-duplication and freshness filtering
-      // do not leave the model with an artificially short source list.
-      options.maxResults = Math.min(100, Math.max(targetResults, Math.min(20, targetResults * 2)))
       const blocked = options.excludeDomains ?? []
       const strategy = current.searchStrategy ?? 'fallback'
       const width = Math.min(4, Math.max(2, current.parallelEngines ?? 2))
