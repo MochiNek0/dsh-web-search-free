@@ -1005,19 +1005,17 @@ function mountEntries(ctx: any, scope: any) {
 
   mountQuickEntry(ctx, inject, label);
 
-  // dsh 0.2.1-rc.3 gave the sidebar's global panel list a More menu that can
-  // pin and unpin every row, so from there a bundle owns a panel of its own
-  // instead of a Settings tab. The seat needs three declarations: `main` for
-  // the page, `sidebar.panellist` for the row, and `sidebar.panellist.actions`
-  // — the More menu, which is what makes the row pinnable. Anything older
-  // declares the last one nowhere and keeps the Settings section below, which
-  // is then the friendlier way in.
+  // dsh 0.2.2-rc.2 added panel pin controls to the sidebar's More menu, so a
+  // bundle can own a panel of its own instead of a Settings tab. The seat needs
+  // three declarations: `main` for the page, `sidebar.panellist` for the row,
+  // and `sidebar.panellist.actions` for the More menu. Keep the Settings section
+  // as a defensive fallback for compositions without the panel seat.
   const PANEL_SLOTS = ["main", "sidebar.panellist", "sidebar.panellist.actions"];
   const declared = new Set<string>();
   let panelDispose: (() => void) | undefined;
   let sectionDispose: (() => void) | undefined;
-  // The Settings section, for a host without the panel list (or before the pin
-  // arrived in 0.2.1-rc.3). The shell draws its navigation row from `label`.
+  // The Settings section is a defensive fallback for compositions without the
+  // panel seat. The shell draws its navigation row from `label`.
   const registerSection = () =>
     ctx.slots.register(
       { name: "settings.section", id: NAMESPACE, order: 40, label, inject },

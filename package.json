@@ -16,7 +16,7 @@
     "url": "https://github.com/MochiNek0/dsh-web-search-free/issues"
   },
   "engines": {
-    "dsh": ">=0.1.2-rc.1"
+    "dsh": ">=0.2.2-rc.2"
   },
   "dsh": {
     "name": "web-search-free",

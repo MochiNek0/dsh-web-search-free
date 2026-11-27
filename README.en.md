@@ -59,7 +59,7 @@ The table order is the default call order: most sustainable free calls first (un
 
 ## Installation
 
-Requires **dsh ≥ 0.1.2-rc.1** and `pnpm` on `PATH`.
+Requires **dsh ≥ 0.2.2-rc.2** and `pnpm` on `PATH`. For older dsh releases, use plugin 1.10.x.
 
 **From the dsh app**: sidebar "Plugins" → "Add plugin" (top right) → enter `dsh-web-search-free` → "Install".
 
@@ -88,23 +88,19 @@ Local directories are linked, so a later `pnpm build` applies right away; after 
 
 </details>
 
-> dsh ≤ 0.1.2-alpha.5 does not mount the web tools: search works but `web_fetch` never appears. Use plugin 1.3.0 there.
-
 ## Configuration
 
 Run `dsh web` and find the card:
 
-| dsh version    | Where the card is                                                              |
-| -------------- | ------------------------------------------------------------------------------ |
-| ≥ 0.2.1-rc.3   | Sidebar **Web Search Free** row (pin or unpin it from the **More** menu)       |
-| ≥ 0.1.6        | Sidebar **Plugins** → "Installed" → **web-search-free**                        |
-| ≤ 0.1.5        | **Settings → Plugins → Web Search Free**                                       |
+| dsh version    | Where the card is                                                                      |
+| -------------- | ------------------------------------------------------------------------------------- |
+| ≥ 0.2.2-rc.2   | Sidebar **Web Search Free** row (unpin from the row; re-pin from the **More** menu)     |
 
-Since 0.2.1-rc.3 the sidebar's **More** menu can pin and unpin every panel, so the plugin gets a row of its own there instead of a place in the Settings dialog.
+Since 0.2.2-rc.2, the sidebar's **More** menu lists unpinned panels and can pin them back; unpin a panel from its row.
 
-On dsh ≥ 0.2 there are two closer ways in, both opening the same form:
+There are two closer ways in, both opening the same form:
 
-- **The "Web Search Free" icon in the sidebar** (≥ 0.2.1-rc.3): the whole form as a page. Hover the row and press the pin to unpin it, or unpin it from the **More** menu; pin it again there whenever you want it back.
+- **The "Web Search Free" icon in the sidebar** (≥ 0.2.2-rc.2): the whole form as a page. Hover the row and press the pin to unpin it; pin it again from the **More** menu whenever you want it back.
 - **The globe icon in the session header**: opens a "Quick setup" dialog; a dot marks it while no engine is configured. To hide it, turn off "Show the shortcut in the session header" at the bottom of Advanced (this browser only).
 
 1. **Click an engine row** and paste keys (one per line); "Get an API key ↗" links to the signup page.
@@ -114,7 +110,7 @@ On dsh ≥ 0.2 there are two closer ways in, both opening the same form:
 
 Configure at least one engine, or search fails with `No web search providers configured.`
 
-The card also offers (needs a dsh with plugin route registration, verified on 0.2.0-rc.2; hidden on older versions):
+The card also offers (hidden when the host does not serve the plugin routes):
 
 - **Test keys**: one small search per key, showing success, result count, latency or the raw error. Uses one search of quota per key.
 - **Usage**: calls, success rate, average latency, last error, cooldown state and cache hits per engine and key. In memory only; resets on restart.
