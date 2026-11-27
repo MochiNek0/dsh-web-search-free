@@ -465,7 +465,7 @@ const zh = {
     "相同的搜索或抓取在这段时间内直接返回上次的结果，不消耗额度。0 为关闭。只存在内存里，重启即清空。",
   "adv.searchStrategy": "搜索策略",
   "adv.searchStrategy.hint":
-    "逐个 fallback 最省额度；并发取最快会同时调用前 N 个引擎，用最先返回的；并发合并会同时调用前 N 个引擎并合并去重，结果最全，但每次搜索消耗 N 个引擎的额度。",
+    "fallback 最省额度：结果过少、缺摘要或全部过期时会继续尝试，弱结果只作最后兜底；race 同时调用前 N 个引擎，等待最先返回的有效结果；merge 合并前 N 个引擎，部分失败或结果偏弱时继续补位，召回最好但可能消耗更多额度。",
   "opt.searchStrategy.fallback": "逐个 fallback（默认）",
   "opt.searchStrategy.race": "并发取最快",
   "opt.searchStrategy.merge": "并发合并结果",
@@ -492,7 +492,7 @@ const zh = {
   "opt.language.ko": "한국어",
   "adv.freshness": "时间范围",
   "adv.freshness.hint":
-    "作用于所有搜索，只对支持时间过滤的引擎生效。主要搜新闻、动态时再开。",
+    "作用于所有搜索：支持的引擎会在上游按时间过滤，宿主还会丢弃能解析且超出范围的过期结果；没有日期的结果保留。主要搜新闻、动态时再开。",
   "opt.freshness.any": "不限",
   "opt.freshness.day": "一天内",
   "opt.freshness.week": "一周内",
@@ -507,19 +507,19 @@ const zh = {
   "adv.domains.placeholder": "每行一个域名，例如 example.com",
   "adv.snippetLength": "摘要长度",
   "adv.snippetLength.hint":
-    "每条结果给模型看的摘要字符数（100–1000）。越长信息越多，也越费 token。",
+    "每条结果给模型看的摘要字符数（100–1000）。宿主优先保留查询词附近的内容和必要换行；越长信息越多，也越费 token。",
   "adv.tavilySearchDepth": "Tavily 搜索深度",
   "adv.tavilySearchDepth.hint": "advanced 结果更相关，但每次消耗 2 credits。",
   "opt.tavilySearchDepth.basic": "basic（1 credit）",
   "opt.tavilySearchDepth.advanced": "advanced（2 credits）",
   "adv.fetchSource": "web_fetch 抓取来源",
   "adv.fetchSource.hint":
-    "providers：用填了 Key 的引擎按顺序抓取，都没有或都失败时退回 dsh 自带的本地抓取。dsh：直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS，部分站点会被拦）。",
-  "opt.fetchSource.providers": "插件引擎（失败退回 dsh 本地）",
+    "providers：用填了 Key 的引擎按顺序抓取，再按开关决定是否用无 Key Jina，最后退回 dsh 自带的本地抓取。dsh：直接用 dsh 自带的本地抓取（免费、URL 不发给第三方，但不渲染 JS，部分站点会被拦）。",
+  "opt.fetchSource.providers": "插件引擎（可经 Jina 退回 dsh 本地）",
   "opt.fetchSource.dsh": "dsh 本地抓取",
   "adv.keylessJinaFetch": "无 Key 抓取兜底",
   "adv.keylessJinaFetch.hint":
-    "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）。没配任何抓取引擎时，它就是唯一的抓取通道。",
+    "带 Key 的抓取都失败时，改用不带 Key 的 Jina Reader（有速率限制，URL 会发给 Jina）；Jina 也失败时仍会尝试 dsh 本地抓取。",
   "entry.title": "免费网页搜索 · 快速配置",
   "entry.tooltip": "免费网页搜索：{summary}",
   "entry.close": "关闭",
@@ -636,7 +636,7 @@ const en: Record<keyof typeof zh, string> = {
     "An identical search or fetch within this window returns the previous result without using quota. 0 turns it off. Memory only; cleared on restart.",
   "adv.searchStrategy": "Search strategy",
   "adv.searchStrategy.hint":
-    "Fallback tries one engine at a time and uses the least quota. Race queries the first N engines at once and takes the fastest. Merge queries the first N engines at once and fuses their results — the best coverage, at N engines' quota per search.",
+    "Fallback uses the least quota: short, snippet-less or stale results continue down the chain, with weak results kept only as a last resort. Race queries the first N engines and waits for the fastest strong answer. Merge fuses the first N engines and fills partial/weak merges from the rest — best recall, but it can use more quota.",
   "opt.searchStrategy.fallback": "Fallback (default)",
   "opt.searchStrategy.race": "Race: fastest wins",
   "opt.searchStrategy.merge": "Merge results",
@@ -664,7 +664,7 @@ const en: Record<keyof typeof zh, string> = {
   "opt.language.ko": "Korean",
   "adv.freshness": "Time range",
   "adv.freshness.hint":
-    "Applies to every search, on engines that support a time filter. Worth turning on only if you mostly search news.",
+    "Applies to every search: supported engines filter upstream, and the host drops dated results outside the window. Results without a date are kept. Worth turning on mostly for news and fast-moving topics.",
   "opt.freshness.any": "Any time",
   "opt.freshness.day": "Past day",
   "opt.freshness.week": "Past week",
@@ -679,7 +679,7 @@ const en: Record<keyof typeof zh, string> = {
   "adv.domains.placeholder": "One domain per line, e.g. example.com",
   "adv.snippetLength": "Snippet length",
   "adv.snippetLength.hint":
-    "Characters of snippet the model sees per result (100–1000). Longer means more context and more tokens.",
+    "Characters of snippet the model sees per result (100–1000). The host favors text near query terms and keeps useful line breaks; longer means more context and more tokens.",
   "adv.tavilySearchDepth": "Tavily search depth",
   "adv.tavilySearchDepth.hint":
     "Advanced returns more relevant results but costs 2 credits per search.",
@@ -687,12 +687,12 @@ const en: Record<keyof typeof zh, string> = {
   "opt.tavilySearchDepth.advanced": "advanced (2 credits)",
   "adv.fetchSource": "web_fetch source",
   "adv.fetchSource.hint":
-    "providers: the keyed engines fetch in call order, falling back to dsh's own local fetcher when none is configured or all fail. dsh: always use dsh's own local fetcher (free, the URL goes to no third party, but no JS rendering, and some sites block it).",
-  "opt.fetchSource.providers": "Plugin engines (dsh local as fallback)",
+    "providers: keyed engines fetch in call order, then keyless Jina when enabled, then dsh's local fetcher. dsh: always use dsh's local fetcher (free, the URL goes to no third party, but no JS rendering, and some sites block it).",
+  "opt.fetchSource.providers": "Plugin engines (optional Jina, then dsh local)",
   "opt.fetchSource.dsh": "dsh local fetch",
   "adv.keylessJinaFetch": "Keyless fetch fallback",
   "adv.keylessJinaFetch.hint":
-    "When every keyed fetch fails, fall back to Jina Reader without a key (rate-limited; the URL is sent to Jina). With no fetch engine configured, it is the only way to fetch.",
+    "When every keyed fetch fails, use Jina Reader without a key (rate-limited; the URL is sent to Jina). If Jina fails too, dsh's local fetcher is still tried.",
   "entry.title": "Web Search Free · Quick setup",
   "entry.tooltip": "Web Search Free: {summary}",
   "entry.close": "Close",

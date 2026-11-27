@@ -1,5 +1,4 @@
 import { SearchResult, SearchSource } from './types.js'
-import { toSnippet } from './providers/fields.js'
 
 /**
  * Tracking parameters stripped before two URLs are compared. Engines append
@@ -20,14 +19,12 @@ export function urlIdentity(raw: string): string {
   } catch {
     return raw.trim()
   }
-  const host = url.hostname.toLowerCase().replace(/^www\./, '')
   for (const name of [...url.searchParams.keys()]) {
     if (TRACKING_PARAM.test(name)) url.searchParams.delete(name)
   }
   url.searchParams.sort()
-  const query = url.searchParams.toString()
   const path = url.pathname.replace(/\/+$/, '')
-  return `${host}${url.port ? `:${url.port}` : ''}${path}${query ? `?${query}` : ''}`
+  return `${url.hostname.toLowerCase().replace(/^www\./, '')}${url.port ? `:${url.port}` : ''}${path}${url.search}`
 }
 
 /**
@@ -75,9 +72,9 @@ const RRF_K = 60
  *
  * Each page scores Σ 1/(k + rank) over the lists it appears in, so a page
  * several engines rank well beats one engine's top hit. Duplicates collapse
- * by {@link urlIdentity}, keeping the first title, the longest snippet and the
- * first date any engine supplied. Ties keep the order of first appearance, so
- * the configured engine order still breaks them.
+ * by {@link urlIdentity}, keeping the first title, the more informative
+ * snippet and the earliest date. Ties keep the order of first
+ * appearance, so the configured engine order still breaks them.
  *
  * @param results - per-engine results, in configured engine order.
  * @returns one result: the first non-empty provider answer, fused sources.
@@ -95,8 +92,12 @@ export function mergeResults(results: readonly SearchResult[]): SearchResult {
         return
       }
       hit.score += score
-      if ((source.snippet?.length ?? 0) > (hit.source.snippet?.length ?? 0)) hit.source.snippet = source.snippet
-      hit.source.publishedAt ??= source.publishedAt
+      hit.source.snippet = betterSnippet(hit.source.snippet, source.snippet)
+      // Engines may report crawl time rather than publication time; the
+      // earliest date is the closest to when the page actually appeared.
+      const next = source.publishedAt ? Date.parse(source.publishedAt) : NaN
+      const previous = hit.source.publishedAt ? Date.parse(hit.source.publishedAt) : NaN
+      if (!Number.isNaN(next) && (Number.isNaN(previous) || next < previous)) hit.source.publishedAt = source.publishedAt
       if (!hit.source.title && source.title) hit.source.title = source.title
     })
   }
@@ -107,18 +108,16 @@ export function mergeResults(results: readonly SearchResult[]): SearchResult {
   return { content, sources }
 }
 
-/**
- * Last pass over the sources handed to the seam: preferred domains move to the
- * front (otherwise keeping their order), and every snippet is cut to the
- * configured length so all engines cost the model the same context.
- */
-export function finalizeSources(
-  sources: readonly SearchSource[],
-  preferred: readonly string[],
-  snippetLength: number,
-): SearchSource[] {
-  const trimmed = sources.map((s) => ({ ...s, snippet: toSnippet(s.snippet, snippetLength) }))
-  if (preferred.length === 0) return trimmed
-  const ahead = trimmed.filter((s) => matchesDomain(s.url, preferred))
-  return [...ahead, ...trimmed.filter((s) => !matchesDomain(s.url, preferred))]
+/** Keep the more informative excerpt, not merely the longest one. */
+function betterSnippet(current: string | undefined, next: string | undefined): string | undefined {
+  if (!next) return current
+  if (!current) return next
+  const words = (s: string) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [])
+  const currentWords = words(current)
+  const nextWords = words(next)
+  let shared = 0
+  for (const word of nextWords) if (currentWords.has(word)) shared++
+  const diversity = shared / Math.max(1, nextWords.size)
+  if (diversity >= 0.5) return next.length > current.length ? next : current
+  return current.length >= next.length ? current : next
 }

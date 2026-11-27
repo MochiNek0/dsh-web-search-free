@@ -20,7 +20,7 @@ export const serpingapiProvider: WebSearchProvider = {
    * `title` / `link` / `snippet` / `position`, and `answerBox`,
    * `knowledgeGraph`, `peopleAlsoAsk`, `relatedSearches` appear when Google
    * returns them. `date` is present on some organic results as a display
-   * string rather than ISO-8601; like SerpApi's it is passed through verbatim.
+   * string rather than ISO-8601; `toPublishedAt` normalizes it before use.
    *
    * Errors are `{ error: { code, message } }` with a matching HTTP status
    * (401 invalid key, 429 `quota_exceeded` once the monthly quota is spent),
@@ -69,8 +69,8 @@ export const serpingapiProvider: WebSearchProvider = {
           url: link,
           title: typeof r?.title === 'string' && r.title.length > 0 ? r.title : link,
           snippet: typeof r?.snippet === 'string' && r.snippet.length > 0 ? r.snippet : undefined,
-          // A display string, not ISO; passed through verbatim. Present on
-          // some results only — a miss is normal.
+          // A display string, normalized to ISO-8601. Present on some
+          // results only — a miss is normal.
           publishedAt: toPublishedAt(r?.date),
         };
       })

@@ -66,9 +66,12 @@ export const baiduProvider: WebSearchProvider = {
         url: r.url,
         title: typeof r.title === 'string' && r.title.length > 0 ? r.title : r.url,
         snippet: toSnippet(r.content),
-        // `date` is a display string ("2025-04-27 18:02:00"), passed through
-        // verbatim like SerpApi's.
-        publishedAt: toPublishedAt(r.date),
+        // `date` is a Beijing-time display string ("2025-04-27 18:02:00")
+        // with no zone; pin it to +08:00 before `toPublishedAt` normalizes it,
+        // or it would read as UTC and land eight hours in the future.
+        publishedAt: toPublishedAt(
+          typeof r.date === 'string' ? r.date.trim().replace(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)$/, '$1T$2+08:00') : r.date,
+        ),
       }));
     if (sources.length === 0) throw new ProviderError('Baidu search returned no results.');
     return { content: '', sources };

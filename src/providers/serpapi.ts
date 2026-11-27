@@ -16,9 +16,8 @@ export const serpapiProvider: WebSearchProvider = {
    * Results live under `organic_results[]`, and the URL field is `link` — not
    * `url` as every other provider uses. `snippet` is genuinely optional, and
    * `date` (when present) is a display string like "5 days ago" rather than
-   * ISO-8601; `toPublishedAt` passes it through verbatim, which the renderer
-   * prints as-is. That is coarser than a parsed date but still signals
-   * recency, so it is read rather than dropped.
+   * ISO-8601; `toPublishedAt` normalizes it to an ISO timestamp so freshness
+   * filtering and cross-engine date comparisons work consistently.
    */
   async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
     const url = new URL('https://serpapi.com/search');
@@ -45,7 +44,7 @@ export const serpapiProvider: WebSearchProvider = {
       throw new ProviderError(`SerpApi search failed: ${data.error}`);
     }
     const entries: any[] = Array.isArray(data?.organic_results) ? data.organic_results : [];
-    if (entries.length === 0) throw new ProviderError('SerpApi search returned no results.');
+    if (entries.length === 0 && !data?.answer_box) throw new ProviderError('SerpApi search returned no results.');
 
     const sources = entries
       .map((r: any) => {
@@ -55,15 +54,22 @@ export const serpapiProvider: WebSearchProvider = {
           url: link,
           title: typeof r?.title === 'string' && r.title.length > 0 ? r.title : link,
           snippet: typeof r?.snippet === 'string' && r.snippet.length > 0 ? r.snippet : undefined,
-          // A display string ("May 2, 2022", "5 days ago"), not ISO; passed
-          // through verbatim. Often absent — a miss is normal.
+          // A display string ("May 2, 2022", "5 days ago"), normalized to
+          // ISO-8601. Often absent — a miss is normal.
           publishedAt: toPublishedAt(r?.date),
         };
       })
       .filter((s): s is NonNullable<typeof s> => s !== undefined);
 
-    if (sources.length === 0) throw new ProviderError('SerpApi search returned no parsable results.');
-    return { content: '', sources };
+    if (sources.length === 0 && !data?.answer_box) throw new ProviderError('SerpApi search returned no parsable results.');
+    // SerpApi's fields are snake_case (`answer_box`), unlike Serping's `answerBox`.
+    const answerBox = data?.answer_box;
+    const content =
+      typeof answerBox?.answer === 'string' ? answerBox.answer
+      : typeof answerBox?.snippet === 'string' ? answerBox.snippet
+      : typeof answerBox?.description === 'string' ? answerBox.description
+      : '';
+    return { content, sources };
   },
 
   async fetch(url: string, apiKey: string, signal?: AbortSignal): Promise<FetchResult> {

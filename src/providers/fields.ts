@@ -85,24 +85,79 @@ export const SNIPPET_MAX_CHARS = 1000;
  */
 export function toSnippet(content: unknown, max = SNIPPET_MAX_CHARS): string | undefined {
   if (typeof content !== 'string' || content.length === 0) return undefined;
-  const text = content.replace(/\s+/g, ' ').trim();
+  // Keep newlines: code blocks, lists and tables lose their meaning when all
+  // whitespace is folded. Only horizontal runs and blank-line noise collapse.
+  const text = content.replace(/[^\S\r\n]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
   if (text.length === 0) return undefined;
   return text.length > max ? `${text.slice(0, max).trimEnd()}…` : text;
 }
 
 /**
- * Pick the first non-empty string from a provider's candidate date fields, for
- * `SearchSource.publishedAt`. Every backend names it differently and most omit
- * it for results whose date they could not determine, so a miss is normal and
- * returns `undefined` — the seam drops absent optional fields, and the official
- * renderer simply prints no `(date)` for that source.
- *
- * Non-string values are skipped rather than coerced: a raw epoch number would
- * render as `(1787372366790)`.
+ * Pick the first parseable date from a provider's candidate fields and
+ * normalize it to ISO-8601. Every backend names it differently and most omit
+ * it for results whose date they could not determine, so a miss is normal.
  */
 export function toPublishedAt(...values: unknown[]): string | undefined {
   for (const value of values) {
-    if (typeof value === 'string' && value.length > 0) return value;
+    const parsed = parsePublishedAt(value)
+    if (parsed) return parsed
   }
   return undefined;
+}
+
+/**
+ * Normalize the date shapes search APIs actually return: epoch seconds/millis,
+ * ISO timestamps (including Baidu's space-separated form) and display strings
+ * such as "5 days ago" or "May 2, 2022". An unparseable value is omitted so a
+ * relative or invalid string cannot silently break freshness filtering.
+ */
+export function parsePublishedAt(value: unknown, now = Date.now()): string | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    // Epoch seconds have 10 digits today; milliseconds have 13. Scale smaller
+    // values conservatively so neither unit renders as a date in 1970.
+    const ms = Math.abs(value) < 1e12 ? value * 1000 : value
+    const date = new Date(ms)
+    return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
+  }
+  if (typeof value !== 'string') return undefined
+  const text = value.trim()
+  if (!text) return undefined
+
+  // Relative display dates are common in Google/Baidu SERPs. Match the number
+  // and unit separately so "2 weeks ago" and "a day ago" behave identically.
+  const relative = text.match(/^(\d+|a|an)\s*(second|minute|hour|day|week|month|year)s?\s+ago$/i)
+  if (relative) {
+    const amount = /^[a-z]/i.test(relative[1]) ? 1 : Number(relative[1])
+    const unitMs: Record<string, number> = {
+      second: 1000,
+      minute: 60_000,
+      hour: 3_600_000,
+      day: 86_400_000,
+      week: 7 * 86_400_000,
+      month: 31 * 86_400_000,
+      year: 365 * 86_400_000,
+    }
+    return new Date(now - amount * unitMs[relative[2].toLowerCase()]).toISOString()
+  }
+
+  // Chinese SERPs (Baidu, Google with hl=zh) use "3天前", "5 小时前", "昨天".
+  const zhRelative = text.match(/^(\d+)\s*(秒|分钟|小时|天|周|个月|月|年)前$/)
+  if (zhRelative) {
+    const unitMs: Record<string, number> = {
+      秒: 1000, 分钟: 60_000, 小时: 3_600_000, 天: 86_400_000, 周: 7 * 86_400_000,
+      个月: 31 * 86_400_000, 月: 31 * 86_400_000, 年: 365 * 86_400_000,
+    }
+    return new Date(now - Number(zhRelative[1]) * unitMs[zhRelative[2]]).toISOString()
+  }
+  const dayWords: Record<string, number> = { '刚刚': 0, 'just now': 0, '今天': 0, today: 0, '昨天': 1, yesterday: 1, '前天': 2 }
+  const days = dayWords[text.toLowerCase()]
+  if (days !== undefined) return new Date(now - days * 86_400_000).toISOString()
+
+  // "2025-04-27 18:02:00" is not accepted by every JS runtime as ISO. A bare
+  // YYYY-MM-DD is deliberately treated as UTC rather than local midnight.
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(text)
+    ? `${text}T00:00:00.000Z`
+    : text.replace(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)$/, '$1T$2Z')
+  const date = new Date(normalized)
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
 }

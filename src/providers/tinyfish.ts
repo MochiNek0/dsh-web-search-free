@@ -23,11 +23,11 @@ export const tinyfishProvider: WebSearchProvider = {
    * `undefined` — the seam drops absent optional fields.
    */
   async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
-    // `location` is a documented country code. `language` is documented only
-    // by example (`en`, `fr`), so it gets the bare primary subtag, and a 400
-    // retries once without either rather than failing the search.
+    // `location` is a documented country code. Keep the full BCP 47 tag so
+    // zh-CN and zh-TW retain their script distinction; a rejected locale costs
+    // only the locale retry, never the search itself.
     const location = options?.region;
-    const language = options?.language?.split('-')[0];
+    const language = options?.language;
     const minutes = freshnessMinutes(options?.freshness);
     const exclude = options?.excludeDomains ?? [];
     const get = (withLocale: boolean) => {

@@ -122,19 +122,35 @@ dsh plugin --profile web add .
 
 | 设置            | 字段                  | 说明                                                                                                                                   |
 | --------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| 搜索策略        | `searchStrategy`      | `fallback`（默认）逐个尝试，最省额度；`race` 同时调前 N 个、取最快；`merge` 同时调前 N 个并合并去重，结果最全但消耗 N 倍额度           |
+| 搜索策略        | `searchStrategy`      | `fallback`（默认）逐个尝试，弱结果继续寻找更好来源、仅作最后兜底；`race` 同时调前 N 个、取最快有效结果；`merge` 同时调前 N 个并融合，部分失败或偏弱时继续补位。后两者可能消耗超过 N 份额度 |
 | 并发引擎数      | `parallelEngines`     | 2–4，默认 2，仅 `race` / `merge` 使用                                                                                                  |
 | 结果地区 / 语言 | `region` / `language` | 默认 `auto`。Brave、SerpApi、Serping API、TinyFish、AnySearch 两项都支持；Tavily、Exa 仅地区；SearXNG 仅语言；其余不支持            |
-| 时间范围        | `freshness`           | `any`（默认）/ `day` / `week` / `month` / `year`。AnySearch、Jina 不支持；百度千帆的 `day` 按一周查                                    |
+| 时间范围        | `freshness`           | `any`（默认）/ `day` / `week` / `month` / `year`。AnySearch、Jina 不支持并在有其他引擎时跳过；百度千帆的 `day` 按一周查。宿主会丢弃**能解析日期**且超出范围的结果，无日期结果保留 |
 | 屏蔽域名        | `blockedDomains`      | 每行一个，含子域名                                                                                                                     |
 | 优先域名        | `preferredDomains`    | 每行一个，这些域名的结果排到最前                                                                                                       |
-| 摘要长度        | `snippetLength`       | 100–1000，默认 300                                                                                                                     |
+| 摘要长度        | `snippetLength`       | 100–1000，默认 300；优先截取查询词附近的片段，并保留代码、表格和列表所需换行                                                     |
 | Tavily 搜索深度 | `tavilySearchDepth`   | `basic`（默认，1 credit）/ `advanced`（2 credits）                                                                                     |
-| 抓取来源        | `fetchSource`         | `providers`（默认）：有 Key 的引擎 → 无 Key Jina → dsh 本地抓取；`dsh`：只用 dsh 本地抓取（免费、不经第三方，但不渲染 JS）             |
+| 抓取来源        | `fetchSource`         | `providers`（默认）：有 Key 的引擎 → 开启时无 Key Jina → dsh 本地抓取；`dsh`：只用 dsh 本地抓取（免费、不经第三方，但不渲染 JS）             |
 | 无 Key 抓取兜底 | `keylessJinaFetch`    | 默认开启，有 Key 的抓取都失败时用无 Key 的 Jina Reader（20 次/分钟，URL 会发给 Jina）                                                  |
 | 缓存时长        | `cacheMinutes`        | 0–60 分钟，默认 10；相同请求直接返回缓存，不耗额度。0 为关闭                                                                           |
 
 每次 (引擎, Key) 尝试单独限时（搜索 10 秒、抓取 20 秒）。返回 401/402/403/429 或提示额度用尽的 Key 会暂时排到链尾（429 为 2 分钟，其余 30 分钟）。全部失败时，报错会列出每次尝试的原因（Key 已打码）。
+
+所有搜索策略都会经过统一后处理：校验 HTTP(S) URL、规范化去重、再次屏蔽域名、按查询词命中/摘要完整性/域名多样性软重排，并截断到请求的结果数。优先域名仍排最前。搜索会向引擎多要一些候选，避免屏蔽、去重或时间过滤后结果过少；这不会改变最终返回给模型的上限，但按结果数计费的引擎（如 Firecrawl）每次会多消耗一些额度。日期会统一为 ISO-8601，`5 days ago`、`3天前`、`昨天` 等相对时间会在收到响应时换算，百度的时间按北京时间解析。
+
+### 质量优先配置示例
+
+```yaml
+- id: web-search-free
+  config:
+    providerOrder: [serpingapi, brave, exa, tavily]
+    searchStrategy: merge
+    parallelEngines: 2
+    tavilySearchDepth: advanced
+    snippetLength: 500
+```
+
+中文大陆资料可把 `serpingapi` 换成 `baidu` 或 `volcengine`；新闻场景再加 `freshness: week` 和较短的 `cacheMinutes`。避免同时融合 `serpapi` 与 `serpingapi`，它们主要使用同一 Google 索引，会产生虚假的“多源共识”。
 
 ### 手动配置
 

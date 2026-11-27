@@ -23,10 +23,12 @@ export const anysearchProvider: WebSearchProvider = {
    */
   async search(query: string, apiKey: string, signal?: AbortSignal, options?: SearchOptions): Promise<SearchResult> {
     // `zone` is `cn` or `intl`; `language` is documented by example only
-    // (`zh-CN`, `en`), so other languages are not sent, and a 400 retries
-    // once without either. No time or domain filters exist.
+    // (`zh-CN`, `en`). The other configurable languages are sent too, and a
+    // 400 retries once without either. No time or domain filters exist.
     const zone = options?.region ? (options.region === 'CN' ? 'cn' : 'intl') : undefined;
-    const language = options?.language === 'zh-CN' || options?.language === 'en' ? options.language : undefined;
+    const language = ['zh-CN', 'zh-TW', 'en', 'ja', 'ko'].includes(options?.language ?? '')
+      ? options?.language
+      : undefined;
     const post = (withLocale: boolean) =>
       fetch('https://api.anysearch.com/v1/search', {
         method: 'POST',

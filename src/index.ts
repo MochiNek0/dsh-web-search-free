@@ -6,7 +6,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { availableProviders } from './providers/index.js'
 import { ProviderError } from './providers/fields.js'
 import { WebSearchProvider as MyProvider, SearchOptions, SearchResult } from './types.js'
-import { finalizeSources, matchesDomain, mergeResults, parseDomains } from './results.js'
+import { FRESHNESS_MS, finalizeSearch } from './postprocess.js'
+import { matchesDomain, mergeResults, parseDomains } from './results.js'
 import { TtlCache } from './cache.js'
 import { UsageStats } from './usage.js'
 
@@ -75,10 +76,13 @@ export interface Config {
 }
 
 /**
- * - `fallback`: one engine at a time, next only on failure. Cheapest.
- * - `race`: the first `parallelEngines` engines at once, fastest answer wins.
+ * - `fallback`: one engine at a time, next only on failure or a weak result.
+ *   Cheapest.
+ * - `race`: the first `parallelEngines` engines at once, fastest strong answer
+ *   wins; a weak answer waits for the other leads.
  * - `merge`: the first `parallelEngines` engines at once, results fused and
- *   de-duplicated. Best recall; costs that many engines' quota per search.
+ *   de-duplicated. Partial/weak merges continue through the remaining chain.
+ *   Best recall; quota use can exceed N engines.
  */
 export const SEARCH_STRATEGIES = ['fallback', 'race', 'merge'] as const
 export type SearchStrategy = typeof SEARCH_STRATEGIES[number]
@@ -135,12 +139,12 @@ const configFields = () => ({
   volcengineApiKey: Schema.string().description('API key(s) for Volcengine web search (from the web-search console; Ark keys do not work). One key per line for multi-key rotation.'),
   enableFetch: Schema.boolean().default(true).description('是否允许模型调用 web_fetch（URL 内容抓取）。web_fetch 工具由 dsh 统一挂载，关闭后调用会返回明确的错误提示，而不是从工具表移除；切换即时生效，无需重启。'),
   fetchSource: Schema.union([...FETCH_SOURCES]).default('providers')
-    .description('web_fetch 由谁抓取：providers 用填了 Key 的引擎（都没有或都失败时退回 dsh 自带的本地抓取）；dsh 直接用 dsh 自带的本地抓取（免费，不经第三方，但不渲染 JS）。'),
+    .description('web_fetch 由谁抓取：providers 用填了 Key 的引擎，再按开关决定是否用无 Key Jina，最后退回 dsh 自带的本地抓取；dsh 直接用 dsh 自带的本地抓取（免费，不经第三方，但不渲染 JS）。'),
   providerOrder: Schema.array(Schema.union(['jina', 'exa', 'tavily', 'firecrawl', 'brave', 'anysearch', 'tinyfish', 'serpapi', 'serpingapi', 'searxng', 'baidu', 'volcengine']))
     .default(['tinyfish', 'searxng', 'anysearch', 'baidu', 'tavily', 'brave', 'exa', 'firecrawl', 'volcengine', 'serpapi', 'jina', 'serpingapi'])
     .description('定义 Provider 的调用顺序。排在前面的服务会优先执行，如果请求失败（或额度用尽），会自动按照该顺序 fallback 到下一个可用服务。'),
   searchStrategy: Schema.union([...SEARCH_STRATEGIES]).default('fallback')
-    .description('搜索策略：fallback 逐个尝试（最省额度）；race 同时调用前 N 个引擎、取最快的；merge 同时调用前 N 个引擎并合并去重（召回最好，消耗 N 倍额度）。'),
+    .description('搜索策略：fallback 逐个尝试，弱结果只作为最后兜底（最省额度）；race 同时调用前 N 个引擎、取最快有效结果；merge 同时调用前 N 个引擎并合并去重，部分引擎失败或结果过弱时继续补位（召回最好）。'),
   parallelEngines: Schema.natural().min(2).max(4).default(2)
     .description('race / merge 策略同时调用的引擎数。'),
   region: Schema.union([...REGIONS]).default('auto')
@@ -148,17 +152,17 @@ const configFields = () => ({
   language: Schema.union([...LANGUAGES]).default('auto')
     .description('结果语言。auto 使用各引擎默认值。'),
   freshness: Schema.union([...FRESHNESS]).default('any')
-    .description('默认时间范围。只对支持时间过滤的引擎生效。'),
+    .description('默认时间范围。支持时间过滤的引擎会在上游过滤；宿主还会丢弃能解析且超出范围的过期结果。无日期结果保留。'),
   blockedDomains: Schema.string().default('')
     .description('屏蔽的域名，每行一个，子域名一并屏蔽。'),
   preferredDomains: Schema.string().default('')
     .description('优先的域名，每行一个：结果中来自这些域名的条目排到前面。'),
   snippetLength: Schema.natural().min(100).max(1000).default(300)
-    .description('每条结果的摘要长度（字符）。越长上下文越多，也越费模型 token。'),
+    .description('每条结果的摘要长度（字符）。宿主会优先截取查询词附近的片段，并保留代码/列表所需换行。越长上下文越多，也越费模型 token。'),
   tavilySearchDepth: Schema.union(['basic', 'advanced']).default('basic')
     .description('Tavily 搜索深度：advanced 结果更相关，但每次消耗 2 credits。'),
   keylessJinaFetch: Schema.boolean().default(true)
-    .description('所有带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（有速率限制）。没配抓取引擎时它就是唯一的抓取通道。'),
+    .description('所有带 Key 的抓取都失败时，用不带 Key 的 Jina Reader 兜底（有速率限制）；Jina 也失败时仍会尝试 dsh 本地抓取。'),
   cacheMinutes: Schema.natural().max(60).default(10)
     .description('相同的搜索或抓取在这么多分钟内直接返回缓存，不再消耗额度。0 为关闭。缓存只在内存里，重启即清空。'),
 })
@@ -687,10 +691,10 @@ export function apply(ctx: Context, config: RawConfig) {
 
   /**
    * `race` / `merge`: query the first key of the first `width` distinct
-   * engines at once. `race` returns the first success and cancels the rest;
-   * `merge` waits for all and fuses what succeeded. If every lead fails, the
-   * remaining attempts (other engines, and the leads' other keys) are walked
-   * one at a time exactly as under `fallback`.
+   * engines at once. `race` returns the first strong success and cancels the
+   * rest; `merge` waits for all and fuses what succeeded. If every lead fails,
+   * or a merge is partial/weak, the remaining attempts (other engines, and the
+   * leads' other keys) are walked one at a time as under `fallback`.
    */
   async function runParallel(
     mode: 'race' | 'merge',
@@ -698,6 +702,7 @@ export function apply(ctx: Context, config: RawConfig) {
     attempts: readonly Attempt[],
     signal: AbortSignal | undefined,
     attempt: (provider: MyProvider, key: string, signal: AbortSignal) => Promise<SearchResult>,
+    weak?: (result: SearchResult) => boolean,
   ): Promise<SearchResult> {
     const leads: Attempt[] = []
     const rest: Attempt[] = []
@@ -709,18 +714,40 @@ export function apply(ctx: Context, config: RawConfig) {
     // without touching the caller, and a caller abort still reaches them all.
     const group = attemptSignal(signal, ATTEMPT_TIMEOUT_MS.search, 'parallel search')
     const trail: string[] = []
-    const runs = leads.map((a) => tryAttempt('search', a, group.signal, attempt, trail))
+    type Settled = { status: 'fulfilled'; value: SearchResult } | { status: 'rejected'; error: unknown }
+    const runs = leads.map((a): Promise<Settled> =>
+      tryAttempt('search', a, group.signal, attempt, trail).then(
+        (value): Settled => ({ status: 'fulfilled', value }),
+        (error): Settled => ({ status: 'rejected', error }),
+      ),
+    )
+    const usable: SearchResult[] = []
     try {
       if (mode === 'race') {
-        try {
-          return await Promise.any(runs)
-        } catch {
-          // Every lead failed; `tryAttempt` logged each one.
+        // Promise.any would accept the first fulfilled lead, weak or not. A
+        // suspiciously short result must not beat a better lead still in
+        // flight, so take outcomes as they settle until one is strong.
+        const pending = new Map(runs.map((run, index) => [index, run.then((settled) => ({ index, settled }))]))
+        while (pending.size > 0) {
+          const { index, settled } = await Promise.race(pending.values())
+          pending.delete(index)
+          if (settled.status !== 'fulfilled') continue
+          if (!weak?.(settled.value)) return settled.value
+          usable.push(settled.value)
         }
       } else {
-        const settled = await Promise.allSettled(runs)
+        const settled = await Promise.all(runs)
         const ok = settled.flatMap((s) => (s.status === 'fulfilled' ? [s.value] : []))
-        if (ok.length > 0) return mergeResults(ok)
+        usable.push(...ok)
+        if (ok.length > 0) {
+          // If only some leads answered strongly, top up from the remaining
+          // chain. Compare against the leads actually started: with fewer
+          // distinct engines than `width`, the rest are only the same
+          // engines' other keys, and re-querying them adds nothing.
+          const strong = ok.filter((result) => !weak?.(result))
+          if (strong.length >= leads.length) return mergeResults(ok)
+          logger.warn?.(`Only ${strong.length}/${leads.length} parallel search engines returned usable results. Trying remaining engines...`)
+        }
       }
     } finally {
       // Cancel a race's losers now rather than when their timers fire.
@@ -729,11 +756,42 @@ export function apply(ctx: Context, config: RawConfig) {
       for (const run of runs) run.catch(() => {})
     }
     if (signal?.aborted) throw signal.reason ?? new Error('web search aborted')
-    return runChain('search', rest, signal, attempt, undefined, trail)
+
+    try {
+      const extra = await runChain('search', rest, signal, attempt, weak, trail)
+      return mergeResults([...usable, extra])
+    } catch (err: any) {
+      // Nothing more answered: keep every lead that did, not just the first.
+      if (usable.length === 0 || signal?.aborted) throw err
+      return mergeResults(usable)
+    }
   }
 
   /** Per-(engine, key) call counts since this plugin instance started, for the card. */
   const usage = new UsageStats()
+
+  /**
+   * A non-empty result is not automatically a good result. Keep these signals
+   * deliberately soft: one short answer can be correct, so a weak result is a
+   * fallback candidate rather than an error and is returned if nothing better
+   * answers.
+   */
+  function isWeakSearch(result: SearchResult, target: number, freshness: SearchOptions['freshness']): boolean {
+    const sources = result.sources ?? []
+    if (sources.length < Math.min(3, target)) return true
+    // Some engines (SerpApi, Serping) omit snippets on individual results; only
+    // a mostly snippet-less page is weak, or fallback would walk every engine.
+    const snippetless = sources.filter((source) => !source.snippet?.trim()).length
+    if (snippetless * 2 > sources.length) return true
+    if (freshness) {
+      const cutoff = Date.now() - FRESHNESS_MS[freshness]
+      if (sources.every((source) => {
+        const time = source.publishedAt ? Date.parse(source.publishedAt) : NaN
+        return !Number.isNaN(time) && time < cutoff
+      })) return true
+    }
+    return false
+  }
 
   const searchCache = new TtlCache<{ content: string; sources: SearchResult['sources'] }>(SEARCH_CACHE_ENTRIES)
   const fetchCache = new TtlCache<{ content: string; truncated: boolean }>(FETCH_CACHE_ENTRIES)
@@ -775,6 +833,12 @@ export function apply(ctx: Context, config: RawConfig) {
         throw new Error('No web search providers configured. Please set at least one API key in config.')
       }
       const options = searchOptions(current, request.maxResults)
+      const targetResults = typeof request.maxResults === 'number' && Number.isFinite(request.maxResults)
+        ? Math.max(1, Math.floor(request.maxResults))
+        : 10
+      // Over-fetch one page so blocking, de-duplication and freshness filtering
+      // do not leave the model with an artificially short source list.
+      options.maxResults = Math.min(100, Math.max(targetResults, Math.min(20, targetResults * 2)))
       const blocked = options.excludeDomains ?? []
       const strategy = current.searchStrategy ?? 'fallback'
       const width = Math.min(4, Math.max(2, current.parallelEngines ?? 2))
@@ -793,6 +857,16 @@ export function apply(ctx: Context, config: RawConfig) {
       if (cached) usage.cacheHit('search')
       if (cached) return { content: cached.content, sources: [...(cached.sources ?? [])], truncated: false }
 
+      // A provider that supports the requested freshness can enforce it at the
+      // source. AnySearch and Jina do not, so they move to the end of the
+      // chain rather than out of it: they still answer when every
+      // time-filtering engine fails, and the dated-result post-filter does
+      // what it can with their results.
+      const noFreshness = (a: Attempt) => a.provider.name === 'anysearch' || a.provider.name === 'jina'
+      const searchAttempts = options.freshness
+        ? [...attempts.filter((a) => !noFreshness(a)), ...attempts.filter(noFreshness)]
+        : attempts
+
       // Blocked domains are filtered per attempt, not after the fact: an
       // engine whose every hit was blocked has found nothing, and under
       // `fallback` that must hand over to the next engine.
@@ -805,14 +879,20 @@ export function apply(ctx: Context, config: RawConfig) {
         return { ...result, sources }
       }
 
+      const weak = (result: SearchResult) => isWeakSearch(result, targetResults, options.freshness)
       const result = strategy === 'race' || strategy === 'merge'
-        ? await runParallel(strategy, width, attempts, signal, attempt)
-        : await runChain('search', attempts, signal, attempt)
+        ? await runParallel(strategy, width, searchAttempts, signal, attempt, weak)
+        : await runChain('search', searchAttempts, signal, attempt, weak)
 
-      const answer = {
-        content: result.content || '',
-        sources: finalizeSources(result.sources ?? [], preferred, snippetLength),
-      }
+      const finalized = finalizeSearch(result, {
+        query: request.query,
+        freshness: options.freshness,
+        blocked,
+        preferred,
+        snippetLength,
+        maxResults: targetResults,
+      })
+      const answer = { content: finalized.content ?? '', sources: finalized.sources ?? [] }
       searchCache.set(cacheKey, answer, cacheTtl(current))
       return { ...answer, sources: [...answer.sources], truncated: false }
     }

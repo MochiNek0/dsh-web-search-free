@@ -122,19 +122,35 @@ The "Advanced" section at the bottom is collapsed by default and works untouched
 
 | Setting               | Field                 | Description                                                                                                                                   |
 | --------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Search strategy       | `searchStrategy`      | `fallback` (default) one at a time, least quota; `race` queries the first N at once and takes the fastest; `merge` queries the first N and fuses results — best coverage, N× quota |
+| Search strategy       | `searchStrategy`      | `fallback` (default) tries one at a time; weak results keep searching and are only a last resort. `race` queries the first N and takes the fastest strong result. `merge` fuses the first N and fills partial/weak merges from the rest. The parallel modes can use more than N engines' quota |
 | Engines at once       | `parallelEngines`     | 2–4, default 2; `race` / `merge` only                                                                                                         |
 | Region / language     | `region` / `language` | Default `auto`. Brave, SerpApi, Serping API, TinyFish and AnySearch take both; Tavily and Exa region only; SearXNG language only; the rest neither |
-| Time range            | `freshness`           | `any` (default) / `day` / `week` / `month` / `year`. Not supported by AnySearch or Jina; Baidu Qianfan treats `day` as a week                  |
+| Time range            | `freshness`           | `any` (default) / `day` / `week` / `month` / `year`. AnySearch and Jina lack the filter and are skipped when another engine is available; Baidu treats `day` as a week. The host drops dated results outside the window and keeps undated results |
 | Blocked domains       | `blockedDomains`      | One per line, subdomains included                                                                                                             |
 | Preferred domains     | `preferredDomains`    | One per line; results from them move to the top                                                                                               |
-| Snippet length        | `snippetLength`       | 100–1000, default 300                                                                                                                         |
+| Snippet length        | `snippetLength`       | 100–1000, default 300; favors text near query terms and preserves useful line breaks                                                 |
 | Tavily search depth   | `tavilySearchDepth`   | `basic` (default, 1 credit) / `advanced` (2 credits)                                                                                          |
-| Fetch source          | `fetchSource`         | `providers` (default): keyed engines → keyless Jina → dsh's local fetcher; `dsh`: dsh's local fetcher only (free, no third party, no JS rendering) |
+| Fetch source          | `fetchSource`         | `providers` (default): keyed engines → keyless Jina when enabled → dsh's local fetcher; `dsh`: local only (free, no third party, no JS rendering) |
 | Keyless fetch fallback | `keylessJinaFetch`   | On by default: when every keyed fetch fails, use Jina Reader without a key (20 req/min; the URL is sent to Jina)                              |
 | Cache                 | `cacheMinutes`        | 0–60 minutes, default 10; identical requests are served from cache without using quota. 0 turns it off                                        |
 
 Each (engine, key) attempt has its own time limit (10 s search, 20 s fetch). A key that returns 401/402/403/429 or reports exhausted quota moves to the back of the chain for a while (2 minutes for 429, 30 minutes otherwise). When everything fails, the error lists each attempt's reason with keys masked.
+
+Every strategy shares one final pass: HTTP(S) URL validation, normalized de-duplication, blocked-domain filtering, soft ranking by query-term hits/snippet completeness/domain diversity, and truncation to the requested result count. Preferred domains still come first. The plugin over-fetches candidates so blocking, de-duplication and date filtering do not leave too few sources; this does not raise the final cap returned to the model, but engines that bill per result (e.g. Firecrawl) use somewhat more quota per search. Dates are normalized to ISO-8601, with relative strings such as "5 days ago", "3天前" or "昨天" resolved when the response arrives; Baidu timestamps are read as Beijing time.
+
+### Quality-first example
+
+```yaml
+- id: web-search-free
+  config:
+    providerOrder: [serpingapi, brave, exa, tavily]
+    searchStrategy: merge
+    parallelEngines: 2
+    tavilySearchDepth: advanced
+    snippetLength: 500
+```
+
+For mainland Chinese sources, replace `serpingapi` with `baidu` or `volcengine`. For news, add `freshness: week` and a shorter `cacheMinutes`. Avoid merging `serpapi` with `serpingapi`: both primarily use Google's index and can create false multi-source consensus.
 
 ### Manual configuration
 

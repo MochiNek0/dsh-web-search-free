@@ -2,7 +2,7 @@ export interface SearchSource {
   url: string;
   title: string;
   snippet?: string;
-  /** Publication/crawl timestamp as a provider-supplied ISO-8601 string. */
+  /** Publication/crawl timestamp normalized to ISO-8601 when the provider supplied a parseable date. */
   publishedAt?: string;
 }
 
