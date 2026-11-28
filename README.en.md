@@ -39,9 +39,11 @@ Every search on the official `deepseek-official` channel is a **full model call*
 | SerpApi             |   ✓    |   ✗   |    weak     | 250 calls/month                               | <https://serpapi.com/users/sign_up>                      |
 | Jina AI             |   ✓    |   ✓   |   partial   | 10M tokens on a new key (one-time)            | <https://jina.ai/api-key>                                |
 | Serping API         |   ✓    |   ✗   |   partial   | 1,000 per account (one-time, no card)         | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| Keenable            |   ✓    |   ✓   |   partial   | 100,000 calls/month (API key)                 | <https://app.keenable.ai/console/api-keys>               |
 
 The table order is the default call order: most sustainable free calls first (unlimited > daily reset > monthly reset > one-time), with lower signup friction breaking ties.
 
+- **Keenable** is opt-in: it only runs once you save a key, and it sits last in the default order. On its default data policy, Keenable logs the query, results, IP and user agent, with or without a key, and sets no fixed retention period ([data and privacy](https://docs.keenable.ai/data-privacy)).
 - **Fetching**: search-only engines (✗) never fetch. With no fetch-capable engine available, `web_fetch` falls back to keyless Jina Reader and dsh's local fetcher (see [Advanced settings](#advanced-settings)).
 - **Result dates** let the model judge recency. Brave is the most complete (18/20 measured); Tavily returns no date for general search, and Firecrawl and AnySearch have no such field. Move Brave up if recency matters.
 

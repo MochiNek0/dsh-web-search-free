@@ -6,6 +6,7 @@ import { parsePublishedAt, toPublishedAt, toSnippet } from '../dist/providers/fi
 import { urlIdentity, mergeResults } from '../dist/results.js'
 import { finalizeSearch, excerptAroundQuery } from '../dist/postprocess.js'
 import { baiduProvider } from '../dist/providers/baidu.js'
+import { keenableProvider } from '../dist/providers/keenable.js'
 
 const NOW = Date.parse('2026-11-27T12:00:00.000Z')
 const DAY = 86_400_000
@@ -134,4 +135,88 @@ test('baidu: zone-less timestamps are read as Beijing time', async (t) => {
   }), { status: 200 })
   const result = await baiduProvider.search('q', 'key')
   assert.equal(result.sources[0].publishedAt, '2025-04-27T10:02:00.000Z')
+})
+
+/** Swap in a fetch stub for one test; returns the recorded calls. */
+function stubFetch(t, respond) {
+  const original = globalThis.fetch
+  t.after(() => { globalThis.fetch = original })
+  const calls = []
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return respond(url, init)
+  }
+  return calls
+}
+
+test('keenable search: keyed POST, options mapped, snippet read instead of the empty description', async (t) => {
+  const calls = stubFetch(t, () => new Response(JSON.stringify({
+    query: 'q',
+    mode: 'realtime',
+    results: [
+      { title: 'A', url: 'https://a.example', snippet: 'alpha  text', description: '', published_at: '2026-11-01T00:00:00Z' },
+      { title: '', url: 'https://b.example', snippet: 'beta' },
+      { title: 'no url', snippet: 'dropped' },
+    ],
+  }), { status: 200 }))
+
+  const result = await keenableProvider.search('q', 'kn-key', undefined, {
+    maxResults: 80, searchDepth: 'basic', freshness: 'week', excludeDomains: ['pinterest.com'], region: 'US',
+  })
+
+  assert.equal(calls[0].url, 'https://api.keenable.ai/v1/search')
+  assert.equal(calls[0].init.method, 'POST')
+  assert.equal(calls[0].init.headers['X-API-Key'], 'kn-key')
+  const body = JSON.parse(calls[0].init.body)
+  assert.equal(body.query, 'q')
+  assert.equal(body.max_results, 50)
+  assert.equal(body.mode, undefined)
+  assert.deepEqual(body.exclude_domains, ['pinterest.com'])
+  assert.ok(Date.parse(body.published_after) < Date.now())
+  assert.equal(body.region, undefined)
+  assert.deepEqual(result.sources, [
+    { url: 'https://a.example', title: 'A', snippet: 'alpha text', publishedAt: '2026-11-01T00:00:00.000Z' },
+    { url: 'https://b.example', title: 'https://b.example', snippet: 'beta', publishedAt: undefined },
+  ])
+})
+
+test('keenable search: no options keeps Keenable defaults', async (t) => {
+  const calls = stubFetch(t, () => new Response(JSON.stringify({ results: [{ title: 'A', url: 'https://a.example', snippet: 's' }] }), { status: 200 }))
+  await keenableProvider.search('q', 'kn-key')
+  assert.deepEqual(JSON.parse(calls[0].init.body), { query: 'q', snippet_max_length: 1000 })
+})
+
+test('keenable search: an error status hands off with the status and API message', async (t) => {
+  stubFetch(t, () => new Response(JSON.stringify({ error: 'Payment required', message: 'Out of funds' }), { status: 402 }))
+  await assert.rejects(keenableProvider.search('q', 'kn-key'), (err) => {
+    assert.equal(err.status, 402)
+    assert.match(err.message, /Out of funds/)
+    return true
+  })
+})
+
+test('keenable search: an empty result list is a failure so the chain moves on', async (t) => {
+  stubFetch(t, () => new Response(JSON.stringify({ results: [] }), { status: 200 }))
+  await assert.rejects(keenableProvider.search('q', 'kn-key'), /no results/)
+})
+
+test('keenable fetch: one URL, provider truncation flag kept', async (t) => {
+  const calls = stubFetch(t, () => new Response(JSON.stringify({
+    results: [{ url: 'https://a.example', content: '# Page', truncated: true }],
+  }), { status: 200 }))
+  const result = await keenableProvider.fetch('https://a.example', 'kn-key')
+  assert.equal(calls[0].url, 'https://api.keenable.ai/v1/fetch')
+  assert.deepEqual(JSON.parse(calls[0].init.body), { urls: ['https://a.example'], content: { max_chars: 200000 } })
+  assert.deepEqual(result, { content: '# Page', truncated: true })
+})
+
+test('keenable fetch: a per-URL error inside a 200 is a failure', async (t) => {
+  stubFetch(t, () => new Response(JSON.stringify({
+    results: [{ url: 'https://a.example', error: { status: 403, message: 'blocked by site' } }],
+  }), { status: 200 }))
+  await assert.rejects(keenableProvider.fetch('https://a.example', 'kn-key'), (err) => {
+    assert.equal(err.status, 403)
+    assert.match(err.message, /blocked by site/)
+    return true
+  })
 })
