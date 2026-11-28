@@ -39,9 +39,11 @@
 | SerpApi              |  ✓   |  ✗   |    弱    | 250 次/月                                  | <https://serpapi.com/users/sign_up>                      |
 | Jina AI              |  ✓   |  ✓   |   部分   | 新 Key 送 10M tokens（一次性）             | <https://jina.ai/api-key>                                |
 | Serping API          |  ✓   |  ✗   |   部分   | 每账号 1,000 次（一次性，无需绑卡）        | <https://serpingapi.com/signup?ref=dsh-web-search-free>  |
+| Keenable             |  ✓   |  ✓   |   部分   | 100,000 次/月（需 API Key）                | <https://app.keenable.ai/console/api-keys>               |
 
 表格顺序即默认调用顺序：按可持续免费次数从多到少（不限量 > 每日重置 > 每月重置 > 一次性），相当时注册/绑卡门槛低的优先。
 
+- **Keenable**：可选，仅在填写 Key 后启用，默认排在最后。在默认数据政策下，无论是否使用 Key，Keenable 都会记录查询、结果、IP 和 User-Agent，且未设定固定保留期限（[数据与隐私](https://docs.keenable.ai/data-privacy)）。
 - **抓取**：只能搜索的引擎（✗）不参与抓取。没有可用的抓取引擎时，`web_fetch` 退回无 Key 的 Jina Reader 和 dsh 本地抓取（见[高级设置](#高级设置)）。
 - **结果日期**：决定模型能否判断时效。Brave 最全（实测 18/20）；Tavily 通用搜索不返回日期，Firecrawl、AnySearch 没有该字段。在意时效可把 Brave 往前挪。
 

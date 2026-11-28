@@ -137,6 +137,13 @@ const PROVIDERS: ProviderMeta[] = [
     signup: "https://serpingapi.com/signup?ref=dsh-web-search-free",
     caps: { search: true },
   },
+  {
+    key: "keenable",
+    field: "keenableApiKey",
+    label: "Keenable",
+    signup: "https://app.keenable.ai/console/api-keys",
+    caps: { search: true, fetch: true },
+  },
 ];
 const DEFAULT_ORDER = PROVIDERS.map((p) => p.key);
 const byKey = (key: string) => PROVIDERS.find((p) => p.key === key)!;
@@ -425,6 +432,7 @@ const zh = {
   "free.searxng": "自建实例，免费不限量",
   "free.baidu": "每日免费额度（每日重置）",
   "free.volcengine": "500 次/月",
+  "free.keenable": "10 万次/月",
   "version.label": "版本 v{version}",
   "version.check": "检查更新",
   "version.checking": "检查中…",
@@ -596,6 +604,7 @@ const en: Record<keyof typeof zh, string> = {
   "free.searxng": "Self-hosted, free and unlimited",
   "free.baidu": "Free daily quota (resets daily)",
   "free.volcengine": "500 calls/month",
+  "free.keenable": "100,000 calls/month",
   "version.label": "Version v{version}",
   "version.check": "Check for updates",
   "version.checking": "Checking…",
@@ -1478,6 +1487,7 @@ type Snapshot = {
     tinyfishApiKey?: string;
     serpapiApiKey?: string;
     serpingapiApiKey?: string;
+    keenableApiKey?: string;
     searxngApiKey?: string;
     baiduApiKey?: string;
     volcengineApiKey?: string;
